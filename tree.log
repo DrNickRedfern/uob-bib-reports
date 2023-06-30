@@ -1,0 +1,16 @@
+Folder PATH listing
+Volume serial number is 8E11-6EC4
+C:.
+│   bibliometric_report_params.toml
+│   dsl.ini
+│   eisvogel.latex
+│   README.md
+│   tree.log
+│   
+├───altmetrics
+│       altmetric_data.R
+│       altmetric_html_top.html
+│       altmetric_scrape_data.py
+│       compile_altmetric_html_file.py
+│       
+└───co_citation_percentile_rank
