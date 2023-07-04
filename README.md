@@ -39,7 +39,7 @@ Parameters
 - `years`
   - `minimum`: `int` the lower bound for the Dimensions query - also used in the final report
   - `maximum`: `int` the upper bound for the Dimensions query - also used in the final report
-  - `current`: `int` the reference year for calculating academic age - almost always the current year
+  - `reference`: `int` the reference year for calculating academic age - almost always the current year
 - `look`
   - `palette`: `string` set the palette to be used in the report - will be some value from Rcolorbrewer's list of colourblind safe palettes: YlOrRd, YlGnBu, RdYlBu, PuBuGn
 - `search`
