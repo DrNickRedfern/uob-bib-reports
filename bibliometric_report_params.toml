@@ -7,7 +7,7 @@ research_unit = 'Research Unit X'
 [years]
 minimum = 2021
 maximum = 2023
-current = 2023
+reference = 2023
 
 [look]
 palette = 'YlGnBu'

@@ -53,3 +53,6 @@ rsconnect/
 
 # ignore data folder
 data/
+
+# ignore notebooks
+*.ipynb
