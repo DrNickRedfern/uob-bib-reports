@@ -50,3 +50,6 @@ rsconnect/
 
 # ini files
 *.ini
+
+# ignore data folder
+data/

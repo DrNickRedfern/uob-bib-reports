@@ -37,7 +37,7 @@ dimcli.login()
 dsl = dimcli.Dsl()
 
 # * Load staff list
-df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'staff_list_demo.csv'))
+df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'staff_list.csv'))
 staff_ids = df_staff_list['researcher_id'].tolist()
 
 # * Researchers
@@ -247,7 +247,7 @@ df_cit_pubs.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_ci
 
 df_cit_pubs_details = (
     df_cit_pubs
-    .filter(['id', 'doi', 'journal_title_raw', 'type', 'year'])
+    .filter(['id', 'doi', 'journal_title_raw', 'type', 'year', 'publisher'])
     .pipe(lambda df: df[df['type'] != 'preprint'])
 ).to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_details.csv"])), index = False)
 
