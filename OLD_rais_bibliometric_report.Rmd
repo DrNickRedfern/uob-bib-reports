@@ -1,0 +1,2022 @@
+---
+params:
+  project_name: !expr blogdown::read_toml('bibliometric_report_params.toml')$project$name
+  research_unit: !expr blogdown::read_toml('bibliometric_report_params.toml')$unit$research_unit
+  min_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$minimum
+  max_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$maximum
+  palette: !expr blogdown::read_toml('bibliometric_report_params.toml')$look$palette
+  #title_page_colour: "`r stringr::str_sub(RColorBrewer::brewer.pal(n = 9, 'YlOrRd')[9])`"
+  output_file_name: "`r paste0(stringr::str_to_lower(stringr::str_replace_all(params$research_unit, ' ', '_')), '_bibliometric_report_', stringr::str_replace_all(format(Sys.time(), '%Y %m %d'), ' ', '_'))`"
+title: "`r params$research_unit`"
+subtitle: 
+  "`r glue::glue('Bibliometric report: {params$min_year} - {params$max_year}')`"
+author: "Research and Innovation Services"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+header-includes:
+  - \usepackage{awesomebox}
+  - \usepackage[none]{hyphenat}
+  - \usepackage{fontspec}
+output:
+  bookdown::pdf_document2:
+     latex_engine: xelatex
+     template: eisvogel.latex
+titlepage: true
+titlepage-color: "`r stringr::str_sub(RColorBrewer::brewer.pal(n = 9, params$palette)[9], -6)`"
+titlepage-text-color: "FFFFFF"
+titlepage-rule-color: "FFFFFF"
+titlepage-rule-height: 2
+titlepage-logo: "university_of_bradford_white_logo.png"
+logo-width: 70mm
+toc: true
+toc-own-page: true
+colorlinks: true
+bibliography: bibliography.bib
+nocite: '@*'
+csl: apa_mod_nr.csl
+knit: |
+  rmdmatter::renaming_renderer(function(metadata) {
+    with(metadata, params$output_file_name)})
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+options(tinytex.engine_args="-shell-escape")
+```
+
+```{r load-packages}
+pacman::p_load(glue, here, ggpubr, ggrepel, tidyquant, tidyverse)
+```
+
+```{r format-output-file-name, eval = FALSE}
+#remotes::install_github("mikmart/rmdmatter")
+# TODO Turn tables into functions or keep them in document for easier editing?
+```
+
+```{r load-data}
+# TODO use glue to format file names for a report using the project name from toml file to
+# TODO rename master to something more meaningful
+researchers <- read_csv(here("data", "faculty_of_health_sciences_researchers.csv"), 
+                        show_col_types = FALSE)
+master <- read_csv(here("data", "faculty_of_health_sciences_publications_details.csv"), 
+                   show_col_types = FALSE)
+
+master <- master %>%
+  filter(type != "preprint") %>%
+  mutate(current_affiliation = VLOOKUP(researcher_id, researchers, researcher_id, current_research_org.name)) 
+```
+
+```{r create-functions}
+# Percent change function
+percent_change <- function(first, last){100 * ((last - first)/first)}
+```
+
+```{r set-palettes}
+discrete_pal <- RColorBrewer::brewer.pal(n = 9, params$palette)
+
+continuous_pal <- colorRampPalette(discrete_pal)
+```
+
+```{r set-theme-source}
+source(here("source_files", "my_theme.R"))
+```
+
+\setmainfont{Arial}
+
+# About this report
+
+This report presents a summary-level bibliometric analysis of outputs produced by researchers in `r params$research_unit` that were published from `r params$min_year` to `r params$max_year`, and includes basic bibliometric information, citation data and impact metrics, open access data, collaboration data, and Altmetrics.
+
+\begin{importantblock}
+This report presents quantitative analyses of bibliometric data that can be used to evaluate research units. However, the limitations of bibliometric analysis mean that bibliometrics should never be used as the sole criteria for any evaluation purposes. Quantitative indicators should always be used to supplement qualitative peer assessment of research quality and impact. Research should always be assessed on its own merits against the strategic goals set out in the University of Bradford’s research and innovation strategy and the objectives of the researchers and the university’s external research partners.
+\end{importantblock}
+
+## Data
+A bibliometric study was performed with all research outputs from `r params$research_unit` *published* from `r params$min_year` to `r params$max_year`. Please note that this does *not* include preprints.
+
+The bibliometric analysis is based on data obtained from the [Dimensions](https://app.dimensions.ai) database. The data was exported from Dimensions on `r format(Sys.time(), '%d %B %Y')`.
+
+<!--
+\begin{noteblock}
+Publications must be at least two years old to have received enough citations for some bibliometric indicators based on citation counts to be reliable.
+\end{noteblock}
+-->
+
+\newpage
+
+# Researchers
+
+```{r}
+# Number of researchers in the sample
+n_researchers_in_results <- dim(researchers)[1]
+
+# Number of currently affiliated researchers
+# Remember this is from all researchers and not just researchers with publications
+n_currently_affiliated_researchers <- researchers %>%
+  filter(current_research_org.name == "University of Bradford") %>%
+  summarise(n = n_distinct(researcher_id)) %>%
+  unlist %>%
+  unname
+
+# Number of researchers with research outputs
+n_researchers_with_outputs <- n_distinct(master$researcher_id)
+
+# Number of researchers without orcid id
+n_researchers_without_orcid <- sum(is.na(researchers$orcid_id))
+
+# Number of researchers with orcid ids
+n_researchers_with_orcid <- length(researchers$researcher_id) - n_researchers_without_orcid
+
+# Percentage of researchers with orcid ids
+p_researchers_with_orcid <- round(100 * (n_researchers_with_orcid/n_researchers_in_results), 0)
+
+# Number of outputs per researcher over time
+df_researcher_outputs <- master %>%
+  group_by(full_name) %>%
+  count(year) %>%
+  pivot_wider(names_from = year, values_from = n) %>%
+  replace(is.na(.), 0) %>%
+  mutate(Total = rowSums(across(where(is.numeric)))) %>%
+  rename(Researcher = full_name) %>%
+  select(order(colnames(.))) %>%
+  relocate(Researcher) %>%
+  ungroup() %>%
+  #mutate(ORCID = VLOOKUP(Researcher, researchers, full_name, orcid_id)) %>%  # TODO check if this can be deleted
+  #relocate(ORCID, .after = "Researcher") %>%
+  replace(is.na(.), "NA")
+
+# mean academic age
+mean_academic_age <- researchers %>%
+  summarise(mean = mean(academic_age)) %>%
+  round(1) %>%
+  unlist %>%
+  unname
+
+# median academic age
+median_academic_age <- researchers %>%
+  summarise(median = median(academic_age)) %>%
+  round(1) %>%
+  unlist %>%
+  unname
+```
+
+This section presents on overview of the researchers in `r params$research_unit` included in the result set.
+
+## Key stats
+
+```{r researcher-key-stats, fig.align='center'}
+researchers_key_stats <- tibble(
+  x = c(2, 8.5, 2, 8.5),
+  y = c(11, 11, 6.5, 6.5),
+  h = c(4.25, 4.25, 4.25, 4.25),
+  w = c(6.25, 6.25, 6.25, 6.25),
+  values = as.character(c(n_researchers_in_results,
+                          n_currently_affiliated_researchers,
+                          n_researchers_with_outputs,
+                          p_researchers_with_orcid)),
+  text = c("Researchers with\nDimensions ids",
+           "Currently affiliated\nresearchers",
+           "Researchers with at\nleast one outputs",
+           "Researchers\nwith an ORCiD id"),
+  colour = factor(c(1, 2, 3, 4))) %>%
+  mutate(values = ifelse(text == "Researchers\nwith an ORCiD id",
+                         paste0(values, "%"),
+                         values))
+
+ggplot(data = researchers_key_stats, 
+                  aes(x, y, height = h, width = w, label = text)) +
+  geom_tile(aes(fill = colour)) +
+  # text for values
+  geom_text(colour = "white", fontface = "bold", size = 24,
+            aes(label = values, x = x - 2.9, y = y - 1.5), hjust = 0, vjust = 0) +
+  # text for tile headings
+  geom_text(colour = "white", fontface = "bold", size = 6, lineheight = 0.9,
+            aes(label = text, x = x - 2.9, y = y + 1.4), hjust = 0) +
+  coord_fixed() +
+  #scale_fill_brewer(palette = "RdBu", direction = -1) +  # need to set colour ramp
+  scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
+  theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null")) +  # remove margin around plot
+  theme_void() +
+  guides(fill = "none")
+```
+
+<!--
+There are `r n_researchers_in_results` researchers with disambiguated researcher ids in Dimensions, of which are `r n_currently_affiliated_researchers` currently affiliated with the University of Bradford. Of the `r n_researchers_in_results` disambiguated researchers in the result set, `r n_researchers_with_orcid` (`r p_researchers_with_orcid`%) have an ORCiD id.
+-->
+
+
+\newpage
+
+## Researchers with outputs published `r params$min_year` to `r params$max_year`
+
+For the time period covered by this report, `r n_researchers_with_outputs` researchers have at least one output. Table \@ref(tab:table-researchers) presents the number of outputs for each researcher by year.
+
+```{r table-researchers}
+# Display the table
+knitr::kable(df_researcher_outputs, format = "latex", longtable = TRUE,
+             align = c("l", rep("c", dim(df_researcher_outputs)[2])), 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = paste0("Number of outputs for researchers in the ", params$research_unit, ". Publications with multiple authors from the University of Bradford are counted once for each author.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position", "repeat_header")) %>%
+  kableExtra::column_spec(1, width = "16em") #%>%
+  #kableExtra::column_spec(2, width = "10em")
+
+```
+
+\begin{warningblock}
+The number of outputs of a researcher is affected by contract type, teaching workload, career stage, gender, personal interests, and other factors. None of these factors are captured by reporting the number of outputs produced by a researcher and the data should be interpreted with care to avoid bias.
+\end{warningblock}
+
+\begin{cautionblock}
+The list of contributing authors in Table @ref(tab:table-researchers) reflects only those researchers who are present in the Dimensions result set. Other members of staff in the `r params$research_unit` may be actively engaged in research and knowledge exchange activities that are not recorded by Dimensions and their absence from Table @ref(tab:table-researchers) should not necessarily be interpreted as a lack of research activity.
+\end{cautionblock}
+
+\newpage
+
+## Academic age
+
+```{r data-academic-age}
+researchers <- researchers %>%
+  mutate(age_bin = cut(academic_age, breaks = c(0, 1, seq(5, 50, 5))),
+         total_publications = VLOOKUP(full_name, df_researcher_outputs, Researcher, Total))
+
+academic_age_bins <- c(0, 1, seq(5, 50, 5))
+academic_age_tags <- c("Below 1", "1 to 5", "6 to 10", "11 to 15", "16 to 20", "21 to 25", "26 to 30", "31 to 35", "36 to 40", "41 or above")
+
+academic_age <- researchers %>%
+  select(researcher_id, academic_age, total_publications) %>%
+  mutate(tag = case_when(
+    academic_age < 1 ~ academic_age_tags[1],
+    academic_age >= 1 & academic_age < 6 ~ academic_age_tags[2],
+    academic_age >= 6 & academic_age < 11 ~ academic_age_tags[3],
+    academic_age >= 11 & academic_age < 16 ~ academic_age_tags[4],
+    academic_age >= 16 & academic_age < 21 ~ academic_age_tags[5],
+    academic_age >= 21 & academic_age < 26 ~ academic_age_tags[6],
+    academic_age >= 26 & academic_age < 31 ~ academic_age_tags[7],
+    academic_age >= 31 & academic_age < 36 ~ academic_age_tags[8],
+    academic_age >= 36 & academic_age < 41 ~ academic_age_tags[9],
+    academic_age >= 41 ~ academic_age_tags[10]
+  )) %>%
+  filter(!is.na(total_publications))
+
+p_younger_than_eleven <- academic_age %>%
+  summarise(n = sum(academic_age < 11)) %>%
+  mutate(n = 100 * (n/length(academic_age$academic_age))) %>%
+  round(1) %>%
+  unlist %>%
+  unname
+
+academic_age$tag <- factor(academic_age$tag,
+                           levels = academic_age_tags,
+                           ordered = FALSE)
+```
+
+A researcher's academic age is defined as *the number of years elapsed since the year publication of their first output*. 
+
+For researchers in `r params$research_unit` who have published at least one output since `r params$min_year`, the mean academic age is `r mean_academic_age`, the median academic age is `r median_academic_age`, and `r p_younger_than_eleven`% have an academic age less than or equal to ten years. Figure \@ref(fig:plot-academic-age) plots the distribution of the academic ages researchers who have at at least one output published between `r params$min_year` and `r params$max_year`.
+
+\smallskip
+
+```{r plot-academic-age, fig.align='center', fig.pos='H', fig.width = 6, fig.cap = glue("Academic age distribution of researchers in the {params$research_unit} with at least one research output published between {params$min_year} and {params$max_year}.")}
+ggplot(data = academic_age) +
+  #geom_bar(aes(x = tag), fill = viridis::viridis(1)) +
+  geom_bar(aes(x = tag), fill = discrete_pal[9]) +
+  stat_count(geom = "text", aes(x = tag, label = after_stat(count)), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = "Academic age", drop = FALSE) +
+  scale_y_continuous(expand = c(0, 0.1),
+                     limits = c(0, 15)) +
+  my_theme() +
+  coord_flip() +
+  theme(axis.line.x = element_blank(),
+        axis.line.y = element_line(colour = "gray"),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        panel.grid = element_blank())
+```
+
+\newpage
+
+# Outputs
+
+## Overview
+
+```{r data-outputs}
+# Number of unique outputs
+n_unique_outputs <- n_distinct(master$publication_id)
+
+# Number of outputs by currently affiliated researchers
+n_outputs_currently_Affiliated <- master %>%
+  filter(current_affiliation == "University of Bradford") %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# Total outputs by type
+df_outputs_by_type <- master %>%
+  distinct(publication_id, year, type) %>%
+  group_by(type) %>%
+  tally() %>%
+  ungroup() %>%
+  mutate(percent = round(100 * n/sum(n), 1))
+
+# Output volume by type over time
+df_output_volume <- master %>%
+  distinct(publication_id, year, type) %>%
+  group_by(year, type) %>%
+  tally() %>%
+  ungroup() %>%
+  complete(year, type, fill = list(n = 0)) %>%
+  mutate(type = str_to_title(type))
+
+# Output growth
+df_output_growth <- df_output_volume %>%
+  group_by(year) %>%
+  summarise(total = sum(n)) %>%
+  ungroup() %>%
+  mutate(cumulative_outputs = cumsum(total),
+         pct_change = round(percent_change(lag(total), total), 1),
+         fill = sign(pct_change))
+
+# Output growth from first year to last year
+p_increase_outputs <- round(percent_change(df_output_growth$total[which.min(df_output_growth$year)],
+                                           df_output_growth$total[which.max(df_output_growth$year)]), 1)
+
+# Plot outputs of currently affiliated researchers
+chart_output_affiliated <- master %>%
+  filter(current_affiliation == "University of Bradford") %>%
+  distinct(publication_id, year) %>%
+  group_by(year) %>%
+  tally() %>%
+  ungroup() %>%
+  ggplot(aes(x = year, y = n)) +
+  #geom_bar(stat = "identity", fill = viridis::viridis(1)) +
+  geom_bar(stat = "identity", fill = discrete_pal[9]) +
+  scale_x_continuous(name = "Year",
+                     breaks = seq(params$min_year, params$max_year, 1), 
+                     labels = seq(params$min_year, params$max_year, 1)) +
+  scale_y_continuous(name = "Outputs") +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+
+# Plot volume of outputs by type over time
+chart_output_volume <- ggplot(df_output_volume, aes(x = year, y = n, fill = type)) +
+  geom_bar(stat = "identity", position = "stack") +
+  scale_x_continuous(name = "Year", 
+                     breaks = seq(params$min_year, params$max_year, 1), 
+                     labels = seq(params$min_year, params$max_year, 1)) +
+  scale_y_continuous(name = "Outputs",
+                     breaks = seq(0, 100, 20),
+                     labels = seq(0, 100, 20)) +
+  # scale_fill_viridis_d(name = NULL, begin = 0, end= 0.8,
+  #                      guide = guide_legend(title.position = "top")) +
+  scale_fill_manual(name = NULL, values = rev(discrete_pal),
+                    guide = guide_legend(title.position = "top")) +
+  #theme_light() +
+  my_theme() +
+  theme(#axis.line.x = element_line(colour = "gray"),
+        legend.position = "bottom"#,
+        #legend.key.size = unit(0.5, "cm"),
+        #legend.text = element_text(size = 9),
+        #legend.title = element_text(size = 10),
+        #panel.border = element_blank(),
+        #panel.grid.major.x = element_blank(),
+        #panel.grid.minor.x = element_blank(),
+        #text = element_text(size = 10)
+        )
+
+# Year-on-year percentage change in total outputs
+# Setting the fill as a factor makes it discrete - remember this when setting the palette
+chart_percentage_change <- df_output_growth %>%
+  filter(!is.na(pct_change)) %>%
+  ggplot(aes(x = year, y = pct_change, fill = factor(fill))) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(name = "Year",
+                     breaks = seq(params$min_year, params$max_year, 1)) +
+  scale_y_continuous(name = "Percentage change in outputs from previous year") +
+  scale_fill_manual(name = NULL, values = discrete_pal[c(4, 9)]) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "none",
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+
+# Cumulative growth in total outputs
+chart_cumulative_growth <- ggplot(data = df_output_growth, aes(x = year, y = cumulative_outputs)) +
+  # geom_area(fill = viridis::viridis(1), alpha = 0.6) +
+  # geom_line(colour = viridis::viridis(1), linewidth = 1) +
+  # geom_point(colour = viridis::viridis(1)) +
+  geom_area(fill = discrete_pal[9], alpha = 0.6) +
+  geom_line(colour = discrete_pal[9], linewidth = 1) +
+  geom_point(colour = discrete_pal[9]) +
+  scale_x_continuous(name = "Year",
+                     breaks = seq(params$min_year, params$max_year, 1), 
+                     labels = seq(params$min_year, params$max_year, 1)) +
+  scale_y_continuous(name = "Outputs") +
+  # theme_light() +
+  # theme(axis.line.x = element_line(colour = "gray"),
+  #       axis.ticks.y = element_blank(),
+  #       panel.border = element_blank(),
+  #       panel.grid.major.x = element_blank(),
+  #       panel.grid.minor.x = element_blank(),
+  #       text = element_text(size = 10))
+  my_theme()
+```
+
+This section presents a descriptive overview of the research outputs of the `r params$research_unit` published form `r params$min_year` to `r params$max_year`.
+
+Researchers in the `r params$research_unit` produced a total of `r n_unique_outputs` research outputs between `r params$min_year` and `r params$max_year`. Figure \@ref(fig:plot-output-cumulative) plots the cumulative growth in the total number of outputs over time and Figure \@ref(fig:plot-output-volume) plots the outputs by all researchers in Table \@ref(tab:table-researchers) by output type. Figure \@ref(fig:plot-output-change) shows the annual percentage change in the number of outputs. Figure \@ref(fig:plot-output-affiliated) plots the total number of outputs published each year by researchers currently affiliated to the University of Bradford. There are `r n_outputs_currently_Affiliated` outputs by researchers currently affiliated to the university.
+
+\medskip
+
+```{r plot-output-cumulative, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap = glue("Cumualtive growth in research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+chart_cumulative_growth
+```
+
+```{r plot-output-change, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap = glue("Annual percentage change in research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+# Add percentage labels to y-axis and remove title
+chart_percentage_change
+```
+
+\newpage
+
+```{r plot-output-volume, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap = glue("Research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+chart_output_volume
+```
+
+\bigskip
+
+```{r plot-output-affiliated, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap = glue("Research outputs produced researchers in the {params$research_unit} who are currently affiliated to the University of Bradford, {params$min_year} - {params$max_year}.")}
+chart_output_affiliated
+```
+
+\newpage
+
+## Open Access
+
+```{r data-open-access}
+open_access_data <- master %>%
+  filter(type == "article") %>%
+  select(publication_id, open_access, times_cited, field_citation_ratio) %>%
+  distinct(publication_id, open_access, times_cited, field_citation_ratio) %>%
+  mutate(open_access = str_to_title(open_access))
+
+open_access_data$open_access <- factor(open_access_data$open_access, 
+                                       levels = c("Bronze",
+                                                  "Gold", 
+                                                  "Green", 
+                                                  "Hybrid",
+                                                  "Closed"))
+
+open_access_count <- open_access_data %>%
+  count(open_access) %>%
+  rename(count = n) %>%
+  mutate(prop = round(count/sum(count), 3),
+         cum_count = rev(cumsum(rev(count))),
+         pos = count/2 + lead(cum_count, 1),
+         pos = if_else(is.na(pos), count/2, pos))
+
+# Percentage of outputs with closed open access
+p_closed_open_access <- ceiling(round(100 * open_access_count$prop[open_access_count$open_access == "Closed"], 1))
+
+# Percentage of outputs with bronze open access
+p_bronze_open_access <- ceiling(round(100 * open_access_count$prop[open_access_count$open_access == "Bronze"], 1))
+
+# Percentage of outputs with gold open access
+p_gold_open_access <- plyr::round_any(100 * open_access_count$prop[open_access_count$open_access == "Gold"], 10, f = floor)
+```
+
+Figure \@ref(fig:plot-open-access) shows that the majority of articles produced by the `r params$research_unit` have some form of open access, with less than `r p_closed_open_access`% classed as Closed and less than `r p_bronze_open_access`% classed as Bronze. The most frequently used open access model is the Gold model, which accounts for over `r p_gold_open_access`% of outputs.
+
+\bigskip
+
+```{r plot-open-access, fig.align='center', fig.width = 5, fig.cap = glue("Percentage of research outputs by type of open access for the {params$research_unit}, {params$min_year} - {params$max_year}. Data is limited to articles only.")}
+open_access_count %>%
+  ggplot(aes(x = 2, y = count, fill = open_access)) +
+  geom_col(colour = "black", linewidth = 0.5) +
+  geom_label_repel(aes(y = pos,
+                       label = glue("{open_access} ({scales::percent(prop)})"), 
+                       fill = open_access),
+                   size = 3.5,
+                   nudge_x = 1,
+                   colour = c(rep("white", 4), "black"),
+                   show.legend = FALSE) +
+  scale_x_discrete(name = "Open access type") +
+  scale_y_continuous(name = "Frequency") +
+  #scale_fill_viridis_d() +
+  scale_fill_manual(name = NULL, values = discrete_pal[c(9,8,7,5,3)]) +
+  coord_polar(theta = "y", start = 0, direction = -1) +
+  xlim(0.1, 3) +
+  theme_void() +
+  theme(legend.position = "none")
+```
+
+\newpage
+
+## Journals and publishers
+
+```{r table-journals}
+df_journals_count <- master %>%
+  filter(!is.na(source_title)) %>%
+  distinct(publication_id, source_title) %>%
+  group_by(source_title) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(desc(count)) %>%
+  relocate(count) %>% 
+  pivot_wider(names_from = count, values_from = source_title) %>%
+  t() %>% data.frame %>% 
+  rename(source_title = 1) %>%
+  rownames_to_column(var = "Outputs") %>%
+  rowwise() %>%
+  mutate(source_title = toString(source_title)) %>%
+  ungroup()
+
+knitr::kable(df_journals_count, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace", longtable = TRUE,
+             caption = glue("Number of outputs per venue of publication for outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Plesae note: Not all reseaarch outputs listed in Dimensions have an identified venue of publication (e.g., monographs and conference proceedings.)")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position", "repeat_header")) %>%
+  kableExtra::column_spec(2, width = "40em")
+```
+
+
+\newpage
+
+## Research areas
+
+The Dimensions data allocates a range of identifiers to research outputs using [machine learning based on peer review](https://plus.dimensions.ai/support/solutions/articles/23000018820-which-research-categories-and-classification-schemes-are-available-in-dimensions-) to identify the research areas to which those outputs belong.
+
+### Fields of Research (ANZSRC2020)
+
+The Australian and New Zealand Standard Research Classification 2020 for fields of research (FoR 2020) is a hierarchical system of classification areas of research, with major fields of research divided into minor fields, with fields are placed into categories with which they share a common methodology. The allocation of a research output to multiple FoRs is a low-level indicator of multi- or interdisciplinary research. Dimensions allocates research to FoRs at two levels: 1st Level FoRs that share the broad methodology, knowledge, and/or perspective as other research outputs in the database; and 2nd Level FoRs that divide the 1st Level FoRs into sub-disciplines. This section of the report focusses on 1st Level FoRs only.
+
+```{r data-for2020}
+df_for_2020 <- read_csv(here("data", "faculty_of_health_sciences_publications_for_2020.csv"), 
+                        show_col_types = FALSE)
+
+df_for_2020 <- df_for_2020 %>%
+  filter(type != "preprint") %>%
+  mutate(level = ifelse(nchar(for_2020_code) == 2, "level_1", "level_2"))
+
+# How many outputs don't have an FoR category allocated?
+outputs_with_no_for <- df_for_2020 %>%
+  filter(is.na(for_2020)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# Level 1 categories
+# How many different level 1 FoR categories are there?
+n_unique_for <- df_for_2020 %>%
+  filter(!is.na(for_2020)) %>%
+  filter(level == "level_1") %>%
+  summarise(n = n_distinct(for_2020)) %>%
+  unlist %>%
+  unname
+
+# Summary table of level 1 FoR 2020 categories
+for_level_1_summary <- df_for_2020 %>%
+  filter(!is.na(for_2020)) %>%
+  filter(level == "level_1") %>%
+  group_by(for_2020) %>%
+  tally(name = "Frequency") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
+  arrange(desc(Percent)) %>%
+  rename(`Level 1 Field of Research` = for_2020)
+
+# Get the number level 1 FoR 2020 categories
+for_2020_level_1_per_publication <- df_for_2020 %>%
+  filter(level == "level_1") %>%
+  group_by(publication_id) %>%
+  tally(name = "for_2020") %>%
+  ungroup() %>%
+  group_by(for_2020) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * count/(outputs_with_no_for + sum(count)), 1))  # Remember to take into account NAs
+
+n_outputs_with_single_level_1_for <- for_2020_level_1_per_publication$count[for_2020_level_1_per_publication$for_2020 == 1]
+p_outputs_with_single_level_1_for <- for_2020_level_1_per_publication$Percent[for_2020_level_1_per_publication$for_2020 == 1]
+n_outputs_with_multi_level_1_for <- sum(for_2020_level_1_per_publication$count) - n_outputs_with_single_level_1_for
+p_outputs_with_multi_level_1_for <- 100 - p_outputs_with_single_level_1_for
+
+source("https://gist.githubusercontent.com/hack-r/22104543e2151519c41a8f0ce042b31c/raw/01731f3176b4ee471785639533d38eda4790ab77/numbers2words.r")
+
+no_for_text <- ifelse(outputs_with_no_for == 1,
+                      glue::glue("is {numbers2words(outputs_with_no_for)} research output that has"),
+                      glue::glue("are {numbers2words(outputs_with_no_for)} research outputs that have"))
+```
+
+Of the research outputs in the data set, `r n_outputs_with_single_level_1_for` (`r p_outputs_with_single_level_1_for`%) are allocated a single 1st Level Field of Research and `r n_outputs_with_multi_level_1_for` (`r p_outputs_with_multi_level_1_for`%) are allocated to multiple 1st Level FoRs. There `r no_for_text` not been allocated a 1st Level FoR category. 
+
+A total of `r n_unique_for` 1st Level Fields of Research are allocated to research outputs from the `r params$research_unit`. Table \@ref(tab:table-for) show the frequency with which different 1st Level FoRs occur.
+
+```{r table-for}
+knitr::kable(for_level_1_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of outputs for the {params$research_unit} allocated to 1st Level Fields of Research (ANZSRC2020). Plesae note: an output may be assigned to more than one FoR.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+\newpage
+
+### REF2021 Units of Assessment
+
+```{r data-uoa}
+df_uoa <- read_csv(here("data", "faculty_of_health_sciences_publications_uoa.csv"), show_col_types = FALSE)
+
+df_uoa <- df_uoa %>%
+  filter(type != "preprint")
+
+# How many outputs don't have an UoA allocated?
+outputs_with_no_uoa <- df_uoa %>%
+  filter(is.na(unit_of_assessment)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many different units of assessment are there?
+n_units_of_assessment <- df_uoa %>%
+  filter(!is.na(unit_of_assessment)) %>%
+  summarise(n = n_distinct(unit_of_assessment)) %>%
+  unlist %>%
+  unname
+
+# Get the number of UoAs per publication
+uoas_per_publication <- df_uoa %>%
+  group_by(publication_id) %>%
+  tally(name = "UoAs") %>%
+  ungroup() %>%
+  group_by(UoAs) %>%
+  tally() %>%
+  ungroup()
+
+# number and percentage of outputs with one uoa
+np_one_uoa <- uoas_per_publication %>%
+  mutate(percent = round(100 * (n/sum(n)), 1)) %>%
+  filter(UoAs == 1)
+
+uoa_summary <- df_uoa %>%
+  filter(!is.na(unit_of_assessment)) %>%
+  group_by(unit_of_assessment) %>%
+  tally(name = "Frequency") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
+  rename(`Unit of Assessment` = unit_of_assessment)
+```
+
+Research outputs from the `r params$research_unit` are allocated to `r n_units_of_assessment` distinct units of assessment (UoA) based on the classification system used in the [2021 REF](https://www.ref.ac.uk). Table \@ref(tab:table-uoa) summarises the number of articles allocated to each unit of assessment. The vast majority `r np_one_uoa$n` (`r np_one_uoa$percent`%) are allocated to a single UoA. There are `r outputs_with_no_uoa` outputs that have not been allocated a unit of assessment. 
+
+```{r table-uoa}
+knitr::kable(uoa_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of outputs for the {params$research_unit} allocated to units of assessment based on REF 2021. Plesae note: an output may be assigned to more than one unit of assessment.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position")) #%>%
+  #kableExtra::column_spec(1, width = "20em")
+```
+
+\newpage
+
+### Medical Subject Headings (MeSH)
+
+```{r data-mesh-terms}
+df_mesh <- read_csv(here("data", "faculty_of_health_sciences_publications_mesh.csv"), show_col_types = FALSE)
+
+df_mesh <- df_mesh %>%
+  filter(type != "preprint")
+
+# How many outputs don't have an MeSH terms allocated?
+outputs_with_at_least_one_mesh_term <- df_mesh %>%
+  filter(!is.na(mesh_terms)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many outputs don't have an MeSH terms allocated?
+outputs_with_no_mesh_term <- df_mesh %>%
+  filter(is.na(mesh_terms)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many different MeSH terms are there?
+n_unique_mesh_terms <- df_mesh %>%
+  filter(!is.na(mesh_terms)) %>%
+  summarise(n = n_distinct(mesh_terms)) %>%
+  unlist %>%
+  unname
+
+k <- 20
+
+top_k_mesh_terms <- df_mesh %>%
+  filter(!is.na(mesh_terms)) %>%
+  group_by(mesh_terms) %>%
+  tally(name = "Frequency") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
+  arrange(desc(Frequency)) %>%
+  filter(Percent >= 1) %>%
+  rename(`MeSH Term` = mesh_terms)
+```
+
+[Medical Subject Headings](https://www.ncbi.nlm.nih.gov/mesh/) (MeSH) is the NLM controlled vocabulary thesaurus used for indexing articles for PubMed.
+
+A total of `r outputs_with_at_least_one_mesh_term` outputs in the data set are allocated at least one MeSH category, with `r n_unique_mesh_terms` unique terms used across these outputs. There are `r outputs_with_no_mesh_term` outputs that have not been allocated at least one MeSH term. Table \@ref(tab:table-mesh) plots the MeSH terms that account for at least 1% of the unique terms.
+
+```{r table-mesh}
+knitr::kable(top_k_mesh_terms, align = "lcc", 
+             booktabs = TRUE, #linesep = "\\addlinespace",
+             caption = glue("The top {k} occuring MeSH terms for research produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position")) #%>%
+  #kableExtra::column_spec(1, width = "20em")
+```
+
+\newpage
+
+### Research, Condition, and Disease Categorization (RCDC)
+
+```{r data-rcdc}
+df_rcdc <- read_csv(here("data", "faculty_of_health_sciences_publications_rcdc.csv"), show_col_types = FALSE)
+
+df_rcdc <- df_rcdc %>%
+  filter(type != "preprint")
+
+# How many outputs have at least one rcdc allocated?
+outputs_with_at_least_one_rcdc <- df_rcdc %>%
+  filter(!is.na(RCDC)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many outputs don't have an rcdc allocated?
+outputs_with_no_rcdc <- df_rcdc %>%
+  filter(is.na(RCDC)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many different rcdc terms are there?
+n_unique_rcdc <- df_rcdc %>%
+  filter(!is.na(RCDC)) %>%
+  summarise(n = n_distinct(RCDC)) %>%
+  unlist %>%
+  unname
+
+top_k_rcdc <- df_rcdc %>%
+  filter(!is.na(RCDC)) %>%
+  group_by(RCDC) %>%
+  tally(name = "Frequency") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
+  arrange(desc(Frequency)) %>%
+  filter(Percent >= 1)
+```
+
+The [Research, Condition, and Disease Categorization](https://report.nih.gov/funding/categorical-spending/rcdc-process) (RCDC) system is used by the National Institutes of Health and is a biomedical classification system consisting of 237 categories.
+
+Of the research outputs in the data set, `r outputs_with_at_least_one_rcdc` are allocated at least one RCDC category, with `r n_unique_rcdc` unique categories used across all research outputs. Table \@ref(tab:table-rcdc) presents those RCDC categories which account for at least 1% of the total categories.
+
+```{r table-rcdc}
+knitr::kable(top_k_rcdc, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Research, Condition, and Disease Categories accounting for at least one per cent of the total categories assigned to research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+\newpage
+
+### Sustainable Devleopment Goals
+
+The Dimensions database classifies research outputs based on the seventeen Sustainable Development Goals set out by the United Nations in the [2030 Agenda for Sustainable Development](https://sdgs.un.org/2030agenda).
+
+```{r data-sdg}
+df_sdg <- read_csv(here("data", "faculty_of_health_sciences_publications_sdg.csv"), 
+                   show_col_types = FALSE)
+
+df_sdg <- df_sdg %>%
+  filter(type!= "preprint")
+
+# How many outputs have an sdg allocated?
+outputs_with_at_least_one_sdg <- df_sdg %>%
+  filter(!is.na(sdg)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# How many outputs don't have an sdg allocated?
+outputs_with_no_sdg <- df_sdg %>%
+  filter(is.na(sdg)) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# Percentage with at least one sdg
+p_with_at_least_one_sdg <- round(100 * outputs_with_at_least_one_sdg/(outputs_with_at_least_one_sdg + outputs_with_no_sdg), 1)
+
+# How many different sdgs are there?
+n_unique_sdg <- df_sdg %>%
+  filter(!is.na(sdg)) %>%
+  summarise(n = n_distinct(sdg)) %>%
+  unlist %>%
+  unname
+
+# Get the number of sdgs per publication
+sdgs_per_publication <- df_sdg %>%
+  filter(!is.na(sdg)) %>%
+  group_by(publication_id) %>%
+  tally(name = "sdgs") %>%
+  ungroup() %>%
+  group_by(sdgs) %>%
+  tally() %>%
+  ungroup()
+
+n_with_multi_sdgs <- sdgs_per_publication %>%
+  filter(sdgs != 1) %>%
+  summarise(n = sum(n)) %>%
+  unlist %>%
+  unname
+  
+sdg_summary <- df_sdg %>%
+  filter(!is.na(sdg)) %>%
+  group_by(sdg) %>%
+  tally(name = "Frequency") %>%
+  ungroup() %>%
+  mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
+  arrange(desc(Frequency)) %>%
+  rename(`Sustainable Development Goal` = sdg)
+```
+
+A total of `r outputs_with_at_least_one_sdg` (`r p_with_at_least_one_sdg`%) research outputs in the data set are classified as associated with a Sustainable Development Goal. There are `r n_with_multi_sdgs` outputs classified as associated with multiple SDGs. Research outputs from the `r params$research_unit` are associated with `r n_unique_sdg` distinct SDGs and Table \@ref(tab:table-sdg) presents the number of outputs associated with each of the relevant SDGs.
+
+```{r table-sdg}
+knitr::kable(sdg_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}, classified according to Sustainable Devleopment Goals. Please note that some outputs may be asociated with mutltiple SDGs")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+\newpage
+
+# Impact
+
+The data set used in this report covers the time period `r params$min_year` to `r params$max_year`. This is a limited time frame for outputs to accumulate citations and some research metrics, such as the Field Citation Ratio, require two years to have elapsed since publication in order to be calculated and are therefore only available for some outputs in the data set.
+
+## Citations
+
+```{r data-citations}
+df_citations <- master %>%
+  filter(type != "preprint") %>%
+  select(publication_id, open_access, year, times_cited, field_citation_ratio) %>%
+  distinct(publication_id, open_access, year, times_cited, field_citation_ratio) %>%
+  mutate(open_access = str_to_title(open_access))
+
+# Number of research outputs
+n_distinct_outputs <- dim(df_citations)[1]
+
+# Total number of citations
+total_citations <- sum(df_citations$times_cited)
+
+# Number outputs with at least one citation
+n_cited_outputs <- df_citations %>%
+  summarise(n = sum(times_cited > 0)) %>%
+  unname %>%
+  unlist
+
+# Percentage of outputs with at least one citation
+p_cited_outputs <- round(100 * (n_cited_outputs/n_distinct_outputs), 1)
+
+# Calculate the i-10 index for each year and overall
+i_10_index_by_year <- df_citations %>%
+  filter(times_cited >= 10) %>%
+  group_by(year) %>%
+  summarise(n = n()) %>%
+  ungroup() %>%
+  add_row(year = params$max_year, n = NA) %>%
+  rename(Year = year)
+
+i_10_index_overall <- i_10_index_by_year %>% filter(Year != 2023) %>% select(n) %>% sum
+p_i_10_index_overall <- round(100 * (i_10_index_overall/n_distinct_outputs), 1)
+```
+
+The `r n_distinct_outputs` outputs in the data set received a total of `r total_citations` citations since `r params$min_year`. Of the outputs in the data set, `r n_cited_outputs` (`r p_cited_outputs`%) have at least one citation.
+
+Table \@ref(tab:table-citations) shows the total number of citations received by research outputs produced by the `r params$research_unit` in each year covered by the data set, along with the mean and median citations per output and the yearly i-10 index. 
+
+```{r table-citations}
+citations_by_year <- df_citations %>%
+  group_by(year) %>%
+  summarise(Outputs = n(),
+            `Cited outputs` = sum(times_cited > 0),
+            `Total citations` = sum(`times_cited`),
+            `Mean citations` = round(mean(`times_cited`), 1),
+            `Median citations` = round(median(`times_cited`), 1)) %>%
+  ungroup() %>%
+  rename(Year = year)
+
+citations_by_year <- inner_join(citations_by_year, i_10_index_by_year, by = "Year") %>%
+  rename(`i-10` = n)
+
+knitr::kable(citations_by_year, align = rep("c", dim(citations_by_year)[2]), 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Total and average citations by year for research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}.")) %>%
+  kableExtra::kable_styling(font_size = 10, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+The i-10 index indicates the number of academic publications that have been cited by at least 10 sources. For the `r params$research_unit` data, the overall i-10 index is `r i_10_index_overall`, with `r p_i_10_index_overall`% or outputs receiving at least 10 citations.
+
+## Field Citation Ratio
+
+The Field Citation Ratio (FCR) is a citation-based measure of the *relative* scientific influence of a research output when compared to similarly-aged outputs in the same field of research. It is calculated as the ratio of the number of citations of an output to the average number of citations received by outputs of the same type published in the same year and in the same fields of research. An FCR greater than 1.0 indicates that an output has more citations than average: for example, an output with an FCR of 1.5 has 50% more citations than average compared to similar outputs. An FCR of less than 1.0 indicates an output has fewer citations than average: for example, an output with an FCR of 0.75 has 25% fewer citations compared to similar outputs.
+
+Given the time frame covered by this report, Field Citation Ratios are only available for outputs published in 2021.
+
+```{r data-fcr}
+# Classify FCR in relation to average
+df_fcr <- df_citations %>% 
+  filter(!is.na(field_citation_ratio)) %>% 
+  mutate(class = ifelse(times_cited == 0, "uncited",
+                        ifelse(field_citation_ratio == 1, "average",
+                               ifelse(field_citation_ratio < 1, "below_average", "above_average"))))
+
+fcr_summary <- df_fcr %>%
+  select(class) %>%
+  group_by(class) %>%
+  summarise(n = n())
+
+# Outputs with FCR
+n_outputs_with_fcr <- length(df_fcr$publication_id)
+
+# United outputs
+n_uncited <- fcr_summary$n[fcr_summary$class == "uncited"]
+p_unicted <- round(100 * (n_uncited/sum(fcr_summary$n)), 1)
+
+# Below average outputs
+n_below_average <- fcr_summary$n[fcr_summary$class == "below_average"]
+p_below_average <- round(100 * (n_below_average/sum(fcr_summary$n)), 1)
+
+# Above average outputs
+n_above_average <- fcr_summary$n[fcr_summary$class == "above_average"]
+p_above_average <- round(100 * (n_above_average/sum(fcr_summary$n)), 1)
+
+# Overall geometric mean for FCR
+fcr_overall_geommean <- df_fcr %>%
+  mutate(fcr_plus_one = field_citation_ratio + 1,
+         fcr_geomean = exp(mean(log(fcr_plus_one))) - 1) %>%
+  select(fcr_geomean) %>%
+  round(2) %>%
+  unique() %>%
+  unlist %>% 
+  unname
+```
+
+Of the `r citations_by_year$Outputs[citations_by_year$Year == 2021]` research outputs published in 2021 included in the data set, `r n_outputs_with_fcr` have a Field Citation Ratio. Of those research outputs within an FCR, `r n_uncited` (`r p_unicted`%) are uncited and have an FCR of zero, and `r n_below_average` (`r p_below_average`%) are below average. This means that the majority of outputs (`r n_above_average` (`r p_above_average`%)) perform better than average when compared to similar outputs. 
+Figure \@ref(fig:plot-fcr) plots the distribution of FCR scores for `r params$research_unit`, clearly illustrating that research outputs from this unit perform above average. The FCR scores range from `r min(df_fcr$field_citation_ratio)` to `r max(df_fcr$field_citation_ratio)`, with a median FCR score of `r round(median(df_fcr$field_citation_ratio), 2)`. The geometric mean FCR score is `r fcr_overall_geommean`.
+
+\bigskip
+
+```{r plot-fcr, fig.height=4, fig.pos="t", fig.cap=glue("The distribution of Field Citation Ratio scores for research outputs (n = {n_outputs_with_fcr}) published by the {params$research_unit} in {params$min_year}.")}
+open_access_data %>%  # Remember this is limited to articles only
+  filter(!is.na(field_citation_ratio)) %>%
+  ggplot(aes(x = " ", y = field_citation_ratio)) +
+  geom_hline(aes(yintercept = 1), linetype = "dashed") +
+  geom_boxplot(outlier.shape = NA, coef = 0) +
+  geom_jitter(aes(colour = open_access), width = 0.25) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Field Citation Ratio",
+                     trans = scales::pseudo_log_trans(base = 10),
+                     breaks = c(0, 1, 5, 10, 20, 30, 40, 50),
+                     labels = c("Uncited", 1, 5, 10, 20, 30, 40, 50)
+  ) +
+  scale_colour_viridis_d(name = "Open access") +
+  guides(colour = guide_legend(title.position = "top")) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        axis.text.y = element_text(angle = 90),
+        axis.ticks.y = element_blank(),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+```
+
+\newpage
+
+## Co-citation percentile rank
+
+```{r cpr-data}
+df_cpr <- read_csv(here("co_citation_percentile_rank", "research_unit_X_cpr.csv"), 
+                   show_col_types = FALSE)
+```
+
+```{r key-stats-cpr}
+n_outputs_with_cpr <- df_cpr %>%
+  filter(!is.na(CPR)) %>%
+  tally() %>%
+  unlist %>%
+  unname
+
+citation_rate_summary <- df_cpr %>% 
+  filter(!is.na(CPR)) %>%
+   summarise(min = fivenum(citation_rate)[1],
+            Q1 = fivenum(citation_rate)[2],
+            median = fivenum(citation_rate)[3],
+            Q3 = fivenum(citation_rate)[4],
+            max = fivenum(citation_rate)[5])
+
+citation_rate_distribution <- df_cpr %>% 
+  filter(!is.na(CPR)) %>%
+  ggplot(aes(x = " ", y = citation_rate)) +
+  geom_boxplot(outlier.shape = NA, coef = 0) +
+  geom_jitter(width = 0.25) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Citation rate") +
+  coord_flip() +
+  my_theme()
+
+cpr_summary <- df_cpr %>% 
+  filter(!is.na(CPR)) %>%
+   summarise(min = fivenum(CPR)[1],
+            Q1 = fivenum(CPR)[2],
+            median = fivenum(CPR)[3],
+            Q3 = fivenum(CPR)[4],
+            max = fivenum(CPR)[5])
+
+cpr_distribution <- df_cpr %>% 
+  filter(!is.na(CPR)) %>%
+  ggplot(aes(x = " ", y = CPR)) +
+  geom_boxplot(outlier.shape = NA, coef = 0) +
+  geom_jitter(width = 0.25) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = "Co-citation percentile") +
+  coord_flip() +
+  my_theme()
+```
+
+The citation rate is calculated as the expected number of citations in a 365-day period:
+
+$$
+Citation\ rate = 365 \times \frac{times\ cited}{days\ output\ has\ been\ available}
+$$
+
+Figure \@ref(fig:chart-citation-rate) plots the distribution of the citation rates for outputs produced by researchers from the `r params$research_unit`.
+
+```{r chart-citation-rate, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Citation rates for outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+citation_rate_distribution
+```
+
+The *co-citation percentile rank* 
+
+Figure \@ref(fig:chart-cpr) plots the distribution of the co-citation percentiles for outputs produced by researchers from the `r params$research_unit`.
+
+```{r chart-cpr, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Co-citation percentile rank for research outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+cpr_distribution
+```
+
+\newpage
+
+## Citations of open access articles
+
+Limiting research outputs to *articles* only, Table \@ref(tab:table-oa-impact) shows that Gold, Green, and Hybrid open access articles tend to perform better than those that use the Bronze model and non-open access articles. The Green model, in which an article is freely available in an open access repository, Gold model, in which an article is published in a fully open access journal, and the hybrid open access model, in which subscription-based journals allow authors to make individual articles Gold open access immediately on payment of an article publication charge, perform similarly, with higher FCR scores, indicating that articles published using these models of open access tend to receive more citations than similar articles, compared to less open models of publishing. 
+
+```{r table-oa-impact}
+open_access_citations <- open_access_data %>%
+  mutate(fcr_plus_one = field_citation_ratio + 1) %>%
+  filter(!is.na(times_cited)) %>%
+  group_by(open_access) %>%
+  summarise(`Total outputs` = n(), 
+            `Cited outputs` = sum(times_cited > 0),
+            `Total citations` = sum(times_cited),
+            `Mean citations` = round(mean(times_cited), 1),
+            `Median citations` = round(median(times_cited), 1)) %>%
+  ungroup()
+
+open_access_fcr_geomean <- open_access_data %>%
+  mutate(fcr_plus_one = field_citation_ratio + 1) %>%
+  filter(!is.na(field_citation_ratio)) %>%
+  group_by(open_access) %>%
+  mutate(`FCR geomean` = exp(mean(log(fcr_plus_one))) - 1) %>%
+  distinct(`FCR geomean`) %>%
+  mutate(`FCR geomean` = round(`FCR geomean`, 1)) %>%
+  ungroup()
+
+open_access_citation_results <- inner_join(open_access_citations, open_access_fcr_geomean, 
+                                           by = "open_access") %>%
+  rename(`Open Access` = open_access)
+
+knitr::kable(open_access_citation_results, 
+             align = c("l", rep("c", dim(open_access_citation_results)[2]-1)), 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Average citations by open access for articles published by the {params$research_unit}, {params$min_year} - {params$max_year}. Please note: the geometric means of the Field Citation Ratios are based on data for {params$min_year} only.")) %>%
+  kableExtra::kable_styling(font_size = 9, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+The mean number of citations is potentially misleading due to the sensitivity of this statistic to outlying data points, with a single highly-cited output able to make the mean value unrepresentative of the data. The median number of citations and the geometric mean of the FCR scores are resistant to these effects. Looking at the median and geometric mean results in Table \@ref(tab:table-oa-impact), we see that the Bronze open access model has a relatively high number mean number of citations, but also has the lowest median number of citations citations and FCR geomean. This suggests that while some Bronze articles can be highly cited, overall this class of open access performs less well compared to other models.
+
+\newpage
+
+# Collaboration
+
+```{r data-orgs-load}
+research_organisations <- read_csv(here("data", 
+                                        "faculty_of_health_sciences_research_organisations.csv"),
+                                   show_col_types = FALSE)
+
+research_organisations <- research_organisations %>%
+  filter(type != "preprint")
+```
+
+## Countries
+
+```{r data-collab-types}
+# Type of collaborations
+# TODO Check the ifelse staircase works in other scenarios
+research_organisations_2 <- research_organisations %>%
+  group_by(publication_id) %>%
+  mutate(collaboration = ifelse(length(organisation_name) == 1, "Single authored",
+                                ifelse(n_distinct(organisation_name) == 1, "Institutional co-authored", 
+                                       ifelse(n_distinct(country_name) == 1, "National collaboration", 
+                                              "International collaboration")))) %>%
+  ungroup()
+
+research_organisations_2$collaboration <- factor(research_organisations_2$collaboration, 
+                                                 levels = c("Single authored",
+                                                            "Institutional co-authored",
+                                                            "National collaboration",
+                                                            "International collaboration"))
+```
+
+```{r collab-types-summary}
+# IS THIS IS WRONG - EITHER IT'S NOT CAPTURING INSTITUTIONAL CO-AUTHORED OR
+# ALL INSTITUTIONAL CO-AUTHORED ARE ALSO INTER/NATIONAL COLLABORATIONS
+df_types_of_collaboration <- research_organisations_2 %>%
+  group_by(collaboration) %>%
+  distinct(publication_id) %>%
+  tally(name = "frequency") %>% 
+  complete(collaboration, fill = list(frequency = 0)) %>%
+  ungroup() %>%
+  mutate(percent = round(100 * frequency/sum(frequency), 1)) %>%
+  rename_with(str_to_title)
+```
+
+```{r data-collab-countries}
+# Narrow down the data set
+collaboration_countries <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  select(publication_id, country_name, year) %>%
+  rename(region = country_name) %>%
+  mutate(region = recode(str_trim(region), "United States" = "USA",
+                         "United Kingdom" = "UK",
+                         "Korea (Rep.)" = "South Korea",
+                         "Congo (Dem. Rep.)" = "Democratic Republic of the Congo",
+                         "Congo (Rep.)" = "Republic of Congo"))
+```
+
+```{r summary-collab-countries}
+# Count of collaborations per country
+df_collaborating_countries <- collaboration_countries %>%
+  group_by(region) %>%
+  summarise(frequency = n_distinct(publication_id)) %>%
+  ungroup() %>%
+  arrange(desc(frequency)) %>%
+  mutate(rank = rank(-frequency, ties.method = "min")) %>%
+  relocate(rank) 
+
+# Number of unique countries collaborated with - includes UK
+n_collaborating_countries <- dim(df_collaborating_countries)[1]
+
+# Most frequently occurring country
+max_country <- df_collaborating_countries$region[which.max(df_collaborating_countries$frequency)]
+```
+
+Research outputs produced by the `r params$research_unit` are broken down into four types of research collaboration:
+
+- Single authored: a research output with a single author from the University of Bradford
+- Institutional co-authored: a research output with multiple authors from the University of Bradford
+- National collaboration: a research output with at least one co-author from another research organisation based in the UK
+- International collaboration: a research output with at least one co-author from another research organisation based outside the UK
+
+From Table \@ref(tab:table-collab-types) we see that single authored papers account for only a small percentage of the total number of research outputs from the `r params$research_unit`. There are no outputs classed as being institutionally co-authored, indicating that all outputs with more than author from the University of Bradford also have at least one co-author from another research organisation, based either in the UK or beyond. Figure \@ref(fig:collab-summary-chart) breaks down the collaboration types by year and Figure \@ref(fig:chart-collab-cumulative-types) shows the cumulative trend in research outputs by collaboration type.
+
+```{r table-collab-types}
+knitr::kable(df_types_of_collaboration, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of research outputs for each type of collaboration with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")) %>%
+  kableExtra::kable_styling(font_size = 10, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+\newpage
+
+```{r collab-summary-chart, fig.align='center', fig.width = 5, fig.height = 3.5, fig.pos='H', fig.cap=glue("Research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+# Stacked bar chart of collaboration types by year
+research_organisations_2 %>%
+  group_by(year, collaboration) %>%
+  tally() %>%
+  ungroup() %>%
+  group_by(year) %>%
+  mutate(prop = n/sum(n)) %>%
+  ggplot(aes(x = year, y = prop, fill = fct_rev(collaboration))) +
+  geom_bar(stat="identity") +
+  scale_x_continuous(name = "Year") +
+  scale_y_continuous(name = "Outputs", 
+                     breaks = seq(0, 1, 0.2), 
+                     labels = scales::percent) +
+  scale_fill_viridis_d(name = "Type of research collaboration",
+                       direction = -1,
+                       guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+```
+
+\bigskip
+
+```{r chart-collab-cumulative-types, fig.align='center', fig.width = 5, fig.height = 3.5, fig.pos='H', fig.cap=glue("Cumualtive research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+# Cumulative bar chart of collaboration types
+research_organisations_2 %>%
+  filter(!is.na(year)) %>%  # This will need to be removed later 
+  distinct(publication_id, year, collaboration) %>%
+  group_by(year, collaboration) %>%
+  tally() %>%
+  ungroup() %>%
+  complete(year, collaboration, fill = list(n = 0)) %>%
+  group_by(collaboration) %>%
+  filter(sum(n) > 0) %>%
+  mutate(cumulative_sum = cumsum(n)) %>%
+  ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(collaboration))) +
+  geom_bar(stat = "identity") + 
+  scale_x_continuous(name = "Year") +
+  scale_y_continuous(name = "Outputs") + 
+  scale_fill_viridis_d(name = "Type of research collaboration",
+                       direction = -1,
+                       guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+```
+
+\newpage
+
+Researchers in the `r params$research_unit` have collaborated with researchers from organisations in `r n_collaborating_countries` different countries. 
+
+Figure \@ref(fig:chart-top-k-countries) presents the top ranked countries by number of collaborations with the `r params$research_unit`. With `r max(df_collaborating_countries$frequency)`, the `r max_country` is by far the major source of research collaborations, and Figure \@ref(fig:collab-map) maps the total number of collaborations across the globe. Figure \@ref(fig:chart-countries-cumualtive) plots the cumulative growth in research outputs for the major collaborating countries.
+
+\medskip
+
+```{r table-countries, eval = FALSE}
+df_collaborating_countries %>%
+  rename(Country = region) %>%
+  rename_with(str_to_title)  %>%
+  filter(Rank < 16) %>%
+  knitr::kable(align = "clc", booktabs = TRUE, linesep = "\\addlinespace",
+               caption = glue("Top 15 most collaborative countries with the {params$research_unit}, {params$min_year} - {params$max_year}.")) %>%
+  kableExtra::kable_styling(font_size = 10, latex_options = c("striped", "HOLD_position"))
+```
+
+```{r chart-top-k-countries, fig.align='center', fig.width = 6, fig.cap=glue("Top 15 most collaborative countries with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+df_collaborating_countries %>%
+  filter(rank < 16) %>%
+  ggplot(aes(x = reorder(region, -frequency), y = frequency)) +
+  geom_col(fill = viridis::viridis(1)) +
+  geom_text(aes(label = frequency), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL, limits = rev) +
+  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 160)) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid = element_blank())
+```
+
+```{r collab-map, fig.align='center', fig.width = 6, fig.cap=glue("The geographical distribution of research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+# Map of collaborations
+pacman::p_load(maps)
+world <- map_data("world")
+
+world <- world %>% filter(region != "Antarctica")
+
+map_dat_countries <- left_join(world, df_collaborating_countries, by = "region") %>% 
+  filter(region != "Antarctica")
+
+collab_map <- ggplot() + 
+  geom_polygon(data = map_dat_countries, aes(long, lat, group = group, fill = frequency), 
+           colour = "darkgray", size = 0.1) +
+  scale_fill_viridis_c(na.value = "lightgray", 
+                       trans = "log10",
+                       name = "Collaborations", 
+                       breaks = c(1, 2, 5, 10, 20, 50, 100),
+                       labels = c(1, 2, 5, 10, 20, 50, 100),
+                       guide = guide_colourbar(barwidth = 15,
+                                               barheight = 1,
+                                               title.position = "top")) +
+  coord_fixed(1.3) +
+  theme(axis.text = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.title = element_blank(),
+        panel.background = element_rect(fill = "white"),
+        plot.title = element_text(hjust = 0.5),
+        legend.position = "bottom",
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        text = element_text(size = 10))
+
+collab_map
+```
+
+\medskip
+
+```{r chart-countries-cumualtive, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap=glue("The cumulative number of research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+df_collaborating_countries <- df_collaborating_countries %>%
+  mutate(class = ifelse(frequency <= 5, "Other", region))
+
+df_collaborating_countries$class <- factor(df_collaborating_countries$class, 
+                                        levels = unique(df_collaborating_countries$class))
+
+chart_cumulative_country_collaborations <- collaboration_countries %>%
+  distinct(publication_id, year, region) %>%
+  mutate(class = VLOOKUP(region, df_collaborating_countries, region, class)) %>%
+  group_by(year, class) %>%
+  tally() %>%
+  ungroup() %>%
+  complete(year, class, fill = list(n = 0)) %>%
+  group_by(class) %>%
+  mutate(cumulative_sum = cumsum(n)) %>%
+  ungroup() %>%
+  ggplot(aes(x = year, y = cumulative_sum, colour = class)) +
+  geom_point() +
+  geom_line() +
+  scale_x_continuous(name = "Year",
+                     breaks = seq(params$min_year, params$max_year, 1),
+                     labels = seq(params$min_year, params$max_year, 1)) +
+  scale_y_continuous(name = "Outputs") + 
+  scale_colour_viridis_d(name = NULL, 
+                         guide = guide_legend(nrow = 2, byrow = TRUE)) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "bottom",
+        legend.text = element_text(size = 9),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+
+chart_cumulative_country_collaborations
+```
+
+## Organisations
+
+```{r orgs-summary-stats}
+unique_organisations <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  select(organisation_name, organisation_type) %>%
+  distinct(organisation_name, organisation_type)
+
+# Get the number of unique research collaborators
+n_unique_collaborators <- dim(unique_organisations)[1]
+```
+
+```{r data-noned-collab}
+# Number of publications with non-educational collaborators
+n_publications_with_non_educational_collaborators <- research_organisations %>%
+  filter(organisation_type != "Education") %>%
+  summarise(count = n_distinct(publication_id)) %>%
+  unlist %>%
+  unname
+
+# Percentage of publications with non-educational collaborators
+percent_publications_with_non_educational_collaborators <- research_organisations %>%
+  filter(organisation_type != "Education") %>%
+  summarise(count = n_distinct(publication_id)) %>%
+  mutate(percent = 100 * count/n_distinct(research_organisations$publication_id)) %>%
+  select(percent) %>%
+  round(1) %>%
+  unlist %>%
+  unname
+
+# Number of non-educational collaborators
+n_non_educational_collaborators <- research_organisations %>%
+  filter(organisation_type != "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+
+# Number of outputs in the sample with each type of collaborator
+# Will produce the wrong total of outputs due to double counting for outputs with
+# more than one type of collaborator
+outputs_in_sample_by_type_of_collaborator <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  group_by(organisation_type) %>%
+  distinct(publication_id, organisation_type) %>%
+  tally() %>% 
+  ungroup() %>%
+  mutate(Percent = round(100 * n/n_distinct(research_organisations$publication_id), 1)) %>%
+  rename(`Organisation type` = organisation_type) %>%
+  rename(Frequency = n)
+
+# Number of collaborators by type of collaborators
+df_types_of_collaborators <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  select(organisation_name, organisation_type) %>%
+  group_by(organisation_type) %>%
+  distinct(organisation_name, organisation_type) %>%
+  tally() %>%
+  ungroup()
+```
+
+Researchers in the `r params$research_unit` collaborated with researchers at `r n_unique_collaborators` research organisations. (This number includes the Wolfson Centre for Applied Health Research as a joint venture between the University of Bradford, Bradford Teaching Hospitals NHS Trust, and the University of Leeds). Figure \@ref(fig:chart-top-orgs) shows the top 15 organisations with the most collaborations with researchers from the University of Bradford.
+
+\smallskip
+
+```{r chart-top-orgs, fig.align='center', fig.width = 6, fig.height = 6, fig.pos='H', fig.cap = glue("The top 15 organisations collaborating with the {params$research_unit} by output volume, {params$min_year} - {params$max_year}.")}
+# Bar chart of collaborating organisations - ALL types
+research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(count) %>%
+  top_n(15, count) %>%
+  mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+         organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type)) %>% 
+  ggplot(aes(x = organisation_name, y = count, fill = organisation_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL,
+                   labels = function(x) stringr::str_wrap(x, width = 32)) +
+  scale_y_continuous(name = NULL, 
+                     limits = c(0, 45),
+                     expand = c(0, 0.1)) +
+  scale_fill_manual(name = "Type of research organisation",
+                     values = c("Education" = "#443A83FF",
+                                "Facility" = "#31688EFF", 
+                                "Healthcare" = "#35B779FF"),
+                    guide = (guide_legend(title.position = "top"))) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        text = element_text(size = 10))
+```
+
+\newpage
+
+Figure \@ref(fig:chart-orgs-types) shows the frequencies of the different types of research organisations to collaborate with researchers from `r params$research_unit` from `r params$min_year` to `r params$max_year`. Table \@ref(tab:table-non-ed-collab) summarises the number of outputs in the data set by the type of collaborating research organisation. Figure \@ref(fig:chart-outputs-orgs) shows the number of research outputs produced in collaboration with different types of research organisations in each year covered by the data set, and Figure \@ref(fig:chart-cumulative-type) shows the cumulative number of collaborations for each type of research organisation.
+
+\medskip
+
+```{r chart-orgs-types, fig.align='center', fig.width = 5, fig.height=3.5, fig.pos='H', fig.cap=glue("Types of research organisations collaborating with the {params$research_unit} by organisation type, {params$min_year} - {params$max_year}.")}
+# Get the number of collaborating organisations by type
+# Total organisations
+research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  group_by(organisation_type) %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  ggplot(aes(x = organisation_type, y = count, fill = organisation_type)) +
+  geom_col() +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL, limits = rev) +
+  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 160)) +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks = element_blank(),
+        legend.position = "none",
+        text = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid = element_blank())
+```
+
+```{r table-non-ed-collab}
+knitr::kable(outputs_in_sample_by_type_of_collaborator, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of research outputs for each type of organisation collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Please note that an output may be counted multiple times where co-authors were from more than one type of organisation.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position"))
+```
+
+\bigskip
+
+```{r chart-outputs-orgs, fig.align='center', fig.width = 6, fig.height = 3.5, fig.pos='H', fig.cap=glue("The number of research outputs by organisation type for research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  distinct(publication_id, year, organisation_type) %>%
+  group_by(year, organisation_type) %>%
+  tally() %>%
+  ungroup() %>%
+  ggplot(aes(x = year, y = n, fill = fct_rev(organisation_type))) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(name = "Year") +
+  scale_y_continuous(name = "Outputs",
+                     limits = c(0, 140),
+                     breaks = seq(0, 120, 20)) +
+  scale_fill_viridis_d(name = NULL, direction = -1,
+                       guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "right",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        text = element_text(size = 10))
+```
+
+```{r chart-cumulative-type, fig.align='center', fig.width = 6, fig.height = 3.5, fig.pos='H', fig.cap=glue("The cumulative number of collaborations by organisation type for research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+# Cumulative outputs by organisation type
+research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  # filter(!organisation_name %in% c("University of Bradford", 
+  #                                  "Wolfson Centre for Applied Health Research")) %>%
+  distinct(publication_id, year, organisation_type) %>%
+  group_by(year, organisation_type) %>%
+  tally() %>%
+  ungroup() %>%
+  complete(year, organisation_type, fill = list(n = 0)) %>%
+  group_by(organisation_type) %>%
+  mutate(cumulative_sum = cumsum(n)) %>%
+  ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(organisation_type))) +
+  geom_bar(stat = "identity") +
+  scale_x_continuous(name = "Year") +
+  scale_y_continuous(name = "Collaborations") +
+  scale_fill_viridis_d(name = NULL, direction = -1,
+                       guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+  theme_light() +
+  theme(axis.line.x = element_line(colour = "gray"),
+        legend.position = "right",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        text = element_text(size = 10))
+```
+
+### Collaborations with educational research organisations
+
+```{r data-educational-collab}
+n_educational_collaborators <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  filter(organisation_type == "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+
+n_uk_educational_collaborators <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  filter(country_name == "United Kingdom") %>%
+  filter(organisation_type == "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+
+n_int_educational_collaborators <- research_organisations %>%
+  filter(country_name != "United Kingdom") %>%
+  filter(organisation_type == "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+```
+
+Researchers from the `r params$research_unit` collaborated with `r n_educational_collaborators` educational research organisations on `r n_publications_with_non_educational_collaborators` research outputs from `r params$min_year` to `r params$max_year`. Of these, `r n_uk_educational_collaborators` were based in the United Kingdom and `r n_int_educational_collaborators` were based outside the UK.
+
+Table \@ref(tab:table-uk-ed) presents the number of outputs for each UK-based educational research organisation produced in collaboration with researchers from the `r params$research_unit`. Table \@ref(tab:table-int-ed) presents the number of outputs for each educational research organisation based outside the UK produced in collaboration with researchers from the `r params$research_unit`.
+
+```{r table-uk-ed}
+uk_educational_collab <- research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  filter(organisation_type == "Education") %>%
+  filter(country_name == "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(desc(count)) %>%
+  relocate(count) %>% 
+  pivot_wider(names_from = count, values_from = organisation_name) %>%
+  t() %>% data.frame %>% 
+  rename(Organisations = 1) %>%
+  rownames_to_column(var = "Outputs") %>%
+  rowwise() %>%
+  mutate(Organisations = toString(Organisations)) %>%
+  ungroup()
+
+knitr::kable(uk_educational_collab, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of research outputs for each UK-based educational research organisation collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Please note that an output may be counted multiple times where co-authors were from more than one of organisation.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "40em")
+```
+
+```{r table-int-ed}
+int_educational_collab <- research_organisations %>%
+  filter(organisation_type == "Education") %>%
+  filter(country_name != "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(desc(count)) %>%
+  relocate(count) %>% 
+  pivot_wider(names_from = count, values_from = organisation_name) %>%
+  t() %>% data.frame %>% 
+  rename(Organisations = 1) %>%
+  rownames_to_column(var = "Outputs") %>%
+  rowwise() %>%
+  mutate(Organisations = toString(Organisations)) %>%
+  ungroup()
+
+knitr::kable(int_educational_collab, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             caption = glue("Number of research outputs for each educational research organisation based outside the UK collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Please note that an output may be counted multiple times where co-authors were from more than one of organisation.")) %>%
+  kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
+                            latex_options = c("striped", "HOLD_position")) %>%
+  kableExtra::column_spec(2, width = "40em")
+```
+
+```{r chart-uk-educational-collab, eval=FALSE, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 7, fig.cap=glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based educational research organisations, {params$min_year} - {params$max_year}.")}
+research_organisations %>%
+  filter(organisation_name != "University of Bradford") %>%
+  filter(organisation_type == "Education") %>%
+  filter(country_name == "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(count) %>%
+  mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+         organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type)) %>% 
+  ggplot(aes(x = organisation_name, y = count)) +
+  geom_bar(stat = "identity", fill = "#443A83FF") +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 32)) +
+  scale_y_continuous(name = NULL, 
+                     limits = c(0, 40),
+                     expand = c(0, 0)) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        text = element_text(size = 10))
+```
+
+```{r chart-int-educational-collab, eval=FALSE, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 7, fig.cap=glue("The number of research outputs by organisation type for international educational research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+research_organisations %>%
+  filter(organisation_type == "Education") %>%
+  filter(country_name != "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(count) %>%
+  mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+         organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type)) %>% 
+  ggplot(aes(x = organisation_name, y = count)) +
+  geom_bar(stat = "identity", fill = "#443A83FF") +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 40)) +
+  scale_y_continuous(name = NULL, 
+                     limits = c(0, 12),
+                     expand = c(0, 0)) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        text = element_text(size = 10))
+```
+
+
+
+\newpage
+
+### Collaborations with non-educational research organisations
+
+```{r data-non-ed-collab}
+n_uk_non_educational_collaborators <- research_organisations %>%
+  filter(country_name == "United Kingdom") %>%
+  filter(organisation_type != "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+
+n_int_non_educational_collaborators <- research_organisations %>%
+  filter(country_name != "United Kingdom") %>%
+  filter(organisation_type != "Education") %>%
+  summarise(count = n_distinct(organisation_name)) %>%
+  unlist %>%
+  unname
+```
+
+
+Researchers from the `r params$research_unit` collaborated with `r n_non_educational_collaborators` non-educational research organisations on `r n_publications_with_non_educational_collaborators` research outputs from `r params$min_year` to `r params$max_year`, so that a total of `r percent_publications_with_non_educational_collaborators`% of research outputs have at least one researcher from non-educational research organisation listed as a co-author. 
+
+Figure \@ref(fig:chart-outputs-int-orgs) shows the number of research outputs produced in collaboration with `r n_int_non_educational_collaborators` non-educational research organisations based outside the UK. 
+
+\medskip
+
+```{r chart-outputs-int-orgs, fig.align='center', fig.width = 6, fig.height = 5.5, fig.pos='H', fig.cap=glue("The number of research outputs by organisation type for international non-educational research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+research_organisations %>%
+  #filter(organisation_name != "Wolfson Centre for Applied Health Research") %>%
+  filter(organisation_type != "Education") %>%
+  filter(country_name != "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(count) %>%
+  mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+         organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type)) %>% 
+  ggplot(aes(x = organisation_name, y = count, fill = organisation_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 40)) +
+  scale_y_continuous(name = NULL, 
+                     limits = c(0, 4.5),
+                     expand = c(0, 0)) +
+  scale_fill_manual(name = "Type of research organisation",
+                       values = c("Facility" = "#31688EFF", 
+                                   "Government" = "#21908CFF", 
+                                   "Healthcare" = "#35B779FF", 
+                                   "Nonprofit" = "#8FD744FF", 
+                                   "Other" = "#FDE725FF"),
+                       guide = (guide_legend(title.position = "top", nrow = 2, byrow = FALSE))) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        text = element_text(size = 10))
+```
+
+\newpage
+
+Figure \@ref(fig:chart-outputs-UK-orgs) shows the number of research outputs produced in collaboration with `r n_uk_non_educational_collaborators` non-educational research organisations based in the UK. 
+
+\medskip
+
+```{r chart-outputs-UK-orgs, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 7.5, fig.cap=glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")}
+# Bar chart of non-educational research collaborators
+research_organisations %>%
+  #filter(organisation_name != "Wolfson Centre for Applied Health Research") %>%
+  filter(organisation_type != "Education") %>%
+  filter(country_name == "United Kingdom") %>%
+  group_by(organisation_name) %>%
+  tally(name = "count") %>%
+  ungroup() %>%
+  arrange(count) %>%
+  mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+         organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type)) %>% 
+  ggplot(aes(x = organisation_name, y = count, fill = organisation_type)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = count), hjust = -0.5, size = 3) +
+  scale_x_discrete(name = NULL#, labels = function(x) stringr::str_wrap(x, width = 40)
+                   ) +
+  scale_y_continuous(name = NULL, 
+                     limits = c(0, 50),
+                     expand = c(0, 0)) +
+  scale_fill_manual(name = "Type of research organisation",
+                    values = c("Archive" = "#440154FF",
+                               "Facility" = "#31688EFF", 
+                               "Government" = "#21908CFF", 
+                               "Healthcare" = "#35B779FF", 
+                               "Nonprofit" = "#8FD744FF"),
+                    guide = (guide_legend(title.position = "top", nrow = 2, byrow = FALSE))) +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.position = "bottom",
+        legend.key.size = unit(0.5, "cm"),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        text = element_text(size = 10))
+```
+
+\newpage
+
+# Altmetrics
+
+```{r data-altmetrics}
+df_altmetrics <- read_csv(here("data", "fohs_altmetric_details.csv"), show_col_types = FALSE)
+df_altmetrics <- df_altmetrics %>%  
+  distinct(doi, .keep_all = TRUE) %>%
+  arrange(desc(Altmetric)) %>%
+  mutate(rank = rank(-Altmetric, ties.method = "min")) %>%
+  relocate(rank)
+
+pubs <- master %>%
+  select(-researcher_id) %>%
+  distinct(doi, .keep_all = TRUE)
+
+df_altmetrics <- inner_join(df_altmetrics, pubs, by = "doi")
+df_altmetrics <- df_altmetrics %>% 
+  mutate(open_access = str_to_title(open_access))
+
+# Altmetric scores
+altmetric_scores <- df_altmetrics %>%
+  select(Altmetric)
+
+altmetric_scores_summary <- fivenum(altmetric_scores$Altmetric)
+```
+
+```{r key-stats-altmetrics}
+n_outputs_with_altemtric_score <- n_distinct(df_altmetrics$doi)
+
+# Altmetric scores
+altmetric_scores_summary <- df_altmetrics %>%
+  select(Altmetric) %>% 
+  reframe(summary = fivenum(Altmetric)) %>%
+  mutate(stat = c("min", "q1", "median", "q3", "max")) %>% 
+  relocate(stat)
+
+# Distribution of altmetric scores
+breaks <- 10^(-10:10)
+minor_breaks <- rep(1:9, 21)*(10^rep(-10:10, each=9))
+
+altmetric_bar <- altmetric_scores %>%
+  ggplot() +
+  geom_bar(aes(x = Altmetric), stat = "count", fill = "Steelblue") +
+  scale_x_continuous(name = "Altmetric score", 
+                     breaks = breaks,
+                     minor_breaks = minor_breaks,
+                     trans = "log10") +
+  scale_y_continuous(name = "Frequency") +
+  my_theme() +  # Not suitable in this case - need to grid lines for log scale change back to light
+  # but keep theg x axis formatting
+  theme(axis.ticks = element_blank(),
+        panel.border = element_blank(), 
+        panel.grid.minor.y = element_blank())
+
+altmetric_box <- altmetric_scores %>%
+  ggplot(aes(x = " ", y = Altmetric)) +
+  geom_boxplot(outlier.shape = NA, coef = 0) +
+  geom_jitter(width = 0.2) +
+  scale_x_discrete(name = NULL) +
+  scale_y_continuous(name = NULL, 
+                     breaks = breaks,
+                     minor_breaks = minor_breaks,
+                     trans = "log10") +
+  coord_flip() +
+  theme_light() +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.border = element_blank(),
+        panel.grid.major.y = element_blank())
+
+altmetric_figure <- ggarrange(altmetric_box, altmetric_bar, 
+                              nrow = 2, align = "v", heights = c(1,2))
+```
+
+A total of `r n_outputs_with_altemtric_score` outputs have an Altmetric score.
+Figure \@ref(fig:chart-altmetric-bar) plots the distribution of Altmetric scores.
+
+```{r chart-altmetric-bar, fig.align='center', fig.pos='H', fig.width=6, fig.height=4, fig.cap=glue("The distribution of Altemtric scores for outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}. Please note: not all outputs have an Altmetric score.")}
+altmetric_figure
+```
+
+```{r altmetric-types}
+df_altmetric_types <- df_altmetrics %>%
+  select(-c(altmetric_id:current_affiliation)) %>%
+  select(-c(rank, Altmetric)) %>%
+  pivot_longer(!doi, names_to = "altmetric", values_to = "count") 
+
+outputs_per_altmetric <- df_altmetric_types %>%
+  filter(!is.na(count)) %>%
+  group_by(altmetric) %>%
+  tally(name = "outputs") %>%
+  ungroup() %>%
+  mutate(percent = round(100 * outputs/n_outputs_with_altemtric_score, 1))
+
+mentions_per_altmetric <- df_altmetric_types %>%
+  group_by(altmetric) %>%
+  summarise(mentions = sum(count, na.rm = TRUE)) %>%
+  ungroup()
+  
+altmetric_summary <- inner_join(outputs_per_altmetric, mentions_per_altmetric, by = "altmetric")
+```
+
+```{r altmetrics-context}
+df_altmetric_context <- df_altmetrics %>%
+  select(doi, contains("context")) %>%
+  filter(!is.na(context_all_count)) %>%
+  select(doi, contains("pct")) %>%
+  pivot_longer(!doi, names_to = "context", values_to = "percentile") 
+
+df_altmetric_context <- df_altmetric_context %>%
+  mutate(clean_name = ifelse(context == unique(df_altmetric_context$context)[1], "All research outputs",
+                             ifelse(context == unique(df_altmetric_context$context)[3], 
+                                    "Outputs of similar age",
+                                    ifelse(context == unique(df_altmetric_context$context)[2],
+                                           "All outputs from source",
+                                           "Outputs of similar age from source"))))
+
+df_altmetric_context$clean_name <- factor(df_altmetric_context$clean_name,
+                                          levels = c(unique(df_altmetric_context$clean_name)[1],
+                                                     unique(df_altmetric_context$clean_name)[3],
+                                                     unique(df_altmetric_context$clean_name)[2],
+                                                     unique(df_altmetric_context$clean_name)[4]))
+
+outputs_with_altmetric_context <- n_distinct(df_altmetric_context$doi)
+
+altmetric_context_data_summary <- df_altmetric_context %>%
+  group_by(context) %>%
+  summarise(min = fivenum(percentile)[1],
+            Q1 = fivenum(percentile)[2],
+            median = fivenum(percentile)[3],
+            Q3 = fivenum(percentile)[4],
+            max = fivenum(percentile)[5])
+
+altmetric_context_distribution <- ggplot(data = df_altmetric_context, 
+                                         aes(x = clean_name, y = percentile, fill = clean_name)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_jitter(width = 0.2) +
+  scale_x_discrete(name = NULL, 
+                   limits = rev(levels(df_altmetric_context$clean_name))) +
+  scale_y_continuous(name = "Percentile") +
+  scale_fill_viridis_d() +
+  coord_flip() +
+  my_theme() +
+  theme(legend.position = "none")
+```
+
+Contextual data is available for `r outputs_with_altmetric_context` outputs.
+
+```{r chart-altmetric-context, fig.align='center', fig.pos='H', fig.width=6, fig.height=3.5, fig.cap=glue("The context of research outputs produced by {params$research_unit}, {params$min_year} - {params$max_year}, based on Altmetric percentiles.")}
+altmetric_context_distribution
+```
+
+
+\newpage
+
+# Research Outputs
+
+:::refs
+:::
