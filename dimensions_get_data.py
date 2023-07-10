@@ -32,6 +32,26 @@ if not os.path.isdir(GRANTS_DIR):
 else:
     print(GRANTS_DIR, ': folder already exists.')
 
+# * Functions
+def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
+    
+    category = 'category_' + name
+    output = output + '_id'
+
+    df_output = (
+         df
+        .filter([output, category])
+        .explode(category)
+    )
+    df_output = pd.json_normalize(df_output[category]).set_index(df_output[output])
+    df_output = (
+       df_output
+       .drop(columns=['id'])
+       .reset_index()
+       .rename(columns={'name': name})
+)
+    return df_output
+
 # * Log into Dimensions using dsl.ini file
 dimcli.login()
 dsl = dimcli.Dsl()
@@ -117,110 +137,34 @@ df_publications_categories = dsl.query_iterative(f"""
                     return publications[id+category_uoa+mesh_terms+category_sdg+category_for_2020+category_rcdc]
 """).as_dataframe().rename(columns={'id': 'publication_id'})
 
-def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
-    
-    category = 'category_' + name
-    output = output + '_id'
-
-    df_output = (
-         df
-        .filter([output, category])
-        .explode(category)
-    )
-    df_output = pd.json_normalize(df_output[category]).set_index(df_output['publication_id'])
-    df_output = (
-       df_output
-       .drop(columns=['id'])
-       .reset_index()
-    .rename(columns={'name': name})
-    #.assign(type = lambda df: df['publication_id'].map(dict_output_type))
-    )
-    return df_output
-
-# Units of assessment
-# df_publications_categories_uoa = df_publications_categories.explode(['category_uoa'])
-# df_publications_categories_uoa = pd.json_normalize(df_publications_categories_uoa['category_uoa']).set_index(df_publications_categories_uoa['publication_id'])
-# df_publications_categories_uoa = (
-#     df_publications_categories_uoa
-#     .drop(columns=['id'])
-#     .reset_index()
-#     .rename(columns={'name': 'unit_of_assessment'})
-#     .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-# )
-
-df_publications_categories_uoa = format_categories(df_publications_categories, 'uoa')
+# UoA
+df_publications_categories_uoa = format_categories(df_publications_categories, 'publication', 'uoa')
 df_publications_categories_uoa = df_publications_categories_uoa.assign(type = df_publications_categories_uoa['publication_id'].map(dict_output_type))
 df_publications_categories_uoa.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_uoa.csv"])), index = False)
 
 # FoR 2020
-# df_publications_categories_for_2020 = (
-#     df_publications_categories
-#     .filter(['publication_id', 'category_for_2020'])
-#     .explode('category_for_2020')
-# )
-# df_publications_categories_for_2020 = pd.json_normalize(df_publications_categories_for_2020['category_for_2020']).set_index(df_publications_categories_for_2020['publication_id'])
-# df_publications_categories_for_2020 = (
-#     df_publications_categories_for_2020
-#     .drop(columns=['id'])
-#     .reset_index()
-#     .rename(columns={'name': 'for_2020'})
-#     .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-# )
-
-df_publications_categories_for_2020 = format_categories(df_publications_categories, 'for_2020')
+df_publications_categories_for_2020 = format_categories(df_publications_categories, 'publication', 'for_2020')
 df_publications_categories_for_2020 = df_publications_categories_for_2020.assign(type = df_publications_categories_for_2020['publication_id'].map(dict_output_type))
 df_publications_categories_for_2020[['for_2020_code','for_2020']] = df_publications_categories_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
 df_publications_categories_for_2020.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_for_2020.csv"])), index = False)
 
 # MeSH 
-# df_publications_categories_mesh = (
-#     df_publications_categories
-#     .filter(['publication_id', 'mesh_terms'])
-#     .explode('mesh_terms')
-#     .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-# )
-
-df_publications_categories_mesh = format_categories(df_publications_categories, 'mesh_terms')
-df_publications_categories_mesh = df_publications_categories_mesh.assign(type = df_publications_categories_mesh['publication_id'].map(dict_output_type))
+df_publications_categories_mesh = (
+    df_publications_categories
+    .filter(['publication_id', 'mesh_terms'])
+    .explode('mesh_terms')
+    .assign(type = lambda df: df['publication_id'].map(dict_output_type))
+)
 df_publications_categories_mesh.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_mesh.csv"])), index = False)
 
-# Sustainable Development Goals
-
-# df_publications_categories_sdg = (
-#     df_publications_categories
-#     .filter(['publication_id', 'category_sdg'])
-#     .explode('category_sdg')
-# )
-# df_publications_categories_sdg = pd.json_normalize(df_publications_categories_sdg['category_sdg']).set_index(df_publications_categories_sdg['publication_id'])
-# df_publications_categories_sdg = (
-#     df_publications_categories_sdg
-#     .drop(columns=['id'])
-#     .reset_index()
-#     .rename(columns={'name': 'sdg'})
-#     .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-# )
-
-df_publications_categories_sdg = format_categories(df_publications_categories, 'sdg')
+# SGD
+df_publications_categories_sdg = format_categories(df_publications_categories, 'publication', 'sdg')
 df_publications_categories_sdg = df_publications_categories_sdg.assign(type = df_publications_categories_sdg['publication_id'].map(dict_output_type))
 df_publications_categories_sdg[['sdg_code','sdg']] = df_publications_categories_sdg['sdg'].str.split(pat=' ', n=1, expand=True)
 df_publications_categories_sdg.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_sdg.csv"])), index = False)
 
 # RCDC
-# df_publications_categories_rcdc = (
-#     df_publications_categories
-#     .filter(['publication_id', 'category_rcdc'])
-#     .explode('category_rcdc')
-# )
-# df_publications_categories_rcdc = pd.json_normalize(df_publications_categories_rcdc['category_rcdc']).set_index(df_publications_categories_rcdc['publication_id'])
-# df_publications_categories_rcdc = (
-#     df_publications_categories_rcdc
-#     .drop(columns=['id'])
-#     .reset_index()
-#     .rename(columns={'name': 'RCDC'})
-#     .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-# )
-
-df_publications_categories_rcdc = format_categories(df_publications_categories, 'rcdc')
+df_publications_categories_rcdc = format_categories(df_publications_categories, 'publication', 'rcdc')
 df_publications_categories_rcdc = df_publications_categories_uoa.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
 df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_rcdc.csv"])), index = False)
 
@@ -272,7 +216,6 @@ df_cit_pubs_orgs = (
     .filter(['country_name', 'name', 'types'])
     .reset_index()
 )
-#df_cit_pubs_orgs.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_orgs.csv"])), index = False)
 
 # Citing authors details
 df_cit_pubs_authors = (
@@ -296,7 +239,6 @@ df_cit_pubs_authors_aff = (
 )
 df_cit_pubs_authors = df_cit_pubs_authors.drop(columns = 'affiliations')
 df_cit_pubs_authors = pd.merge(df_cit_pubs_authors, df_cit_pubs_authors_aff, on = 'full_name')
-#df_cit_pubs_authors.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_authors.csv"])), index = False)
 
 df_cit_pubs_orgs = df_cit_pubs_orgs.filter(['publication_id', 'name', 'types'])
 df_output = pd.merge(df_cit_pubs_authors, df_cit_pubs_orgs, on = 'name')
@@ -304,7 +246,7 @@ df_output = df_output.drop_duplicates()
 df_output.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_citers.csv"])), index = False)
 
 # Citing publications research areas
-df_citations_for_2020 = format_categories(df_cit_pubs, 'for_2020')
+df_citations_for_2020 = format_categories(df_cit_pubs, 'publication', 'for_2020')
 df_citations_for_2020[['for_2020_code','for_2020']] = df_citations_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
 df_citations_for_2020.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_for_2020.csv"])), index = False)
 
@@ -338,7 +280,6 @@ else:
     df_funder_org_countries = df_funder_org_countries.reset_index().drop(columns=['id']).rename(columns = {'name' : 'funder_org_countries'})
     df_grants_summary = df_grants_summary.drop(columns = ['project_numbers', 'funder_org_countries'])
     df_grants_summary = pd.merge(df_grants_summary, df_grants_project_numbers, on = 'grant_id')
-    # df_grants_summary = df_grants_summary.drop(columns = ['funder_org_countries'])
     df_grants_summary = pd.merge(df_grants_summary, df_funder_org_countries, on = 'grant_id')
     df_grants_summary.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_details.csv"])), index = False)
     
@@ -412,54 +353,33 @@ else:
                         where id in {json.dumps(list(df_grants_summary['grant_id']))}
                         return grants[id+category_uoa+category_hra+category_hrcs_hc+category_hrcs_rac+category_icrp_cso+category_sdg+category_for_2020+category_rcdc]
     """).as_dataframe().rename(columns={'id': 'grant_id'})
-    
-    # Formatting catgoeries for grants
-    # def format_grants_categories(df: pd.DataFrame, name: str) -> pd.DataFrame:
-    
-    #     category = 'category_' + name
-    
-    #     df_output = (
-    #         df
-    #         .filter(['grant_id', category])
-    #         .explode(category)
-    #     )
-    #     df_output = pd.json_normalize(df_output[category]).set_index(df_output['grant_id'])
-    #     df_output = (
-    #        df_output
-    #        .drop(columns=['id'])
-    #        .reset_index()
-    #     .rename(columns={'name': name})
-    #     )
-    #     return df_output
-    
+
     # Units of assessment
-    df_grants_categories_uoa = format_categories(df_grants_categories, 'category_uoa')
+    df_grants_categories_uoa = format_categories(df_grants_categories, 'grant', 'uoa')
     df_grants_categories_uoa.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_uoa.csv"])), index = False)
     
     # FoR 2020
-    df_grants_categories_for_2020 = format_categories(df_grants_categories, 'category_for_2020')
+    df_grants_categories_for_2020 = format_categories(df_grants_categories, 'grant', 'for_2020')
     df_grants_categories_for_2020[['for_2020_code','for_2020']] = df_grants_categories_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
     df_grants_categories_for_2020.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_for_2020.csv"])), index = False)
     
     # RCDC
-    df_grants_categories_rcdc = format_categories(df_grants_categories, 'category_rcdc')
+    df_grants_categories_rcdc = format_categories(df_grants_categories, 'grant', 'rcdc')
     df_grants_categories_rcdc.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_rcdc.csv"])), index = False)
     
     # SDG
-    df_grants_categories_sdg = format_categories(df_grants_categories, 'category_sdg')
+    df_grants_categories_sdg = format_categories(df_grants_categories, 'grant', 'sdg')
     df_grants_categories_sdg[['sdg_code','sdg']] = df_grants_categories_sdg['sdg'].str.split(pat=' ', n=1, expand=True)
     df_grants_categories_sdg.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_sdg.csv"])), index = False)
     
     # HRA
-    df_grants_categories_hra = format_categories(df_grants_categories, 'category_hra')
+    df_grants_categories_hra = format_categories(df_grants_categories, 'grant', 'hra')
     df_grants_categories_hra.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hra.csv"])), index = False)
     
     # HRCS HC
-    df_grants_categories_hrcs_hc = format_categories(df_grants_categories, 'category_hrcs_hc')
+    df_grants_categories_hrcs_hc = format_categories(df_grants_categories, 'grant', 'hrcs_hc')
     df_grants_categories_hrcs_hc.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hrcs_hc.csv"])), index = False)
     
     # HRCS RAC
-    df_grants_categories_hrcs_rac = format_categories(df_grants_categories, 'category_hrcs_rac')
+    df_grants_categories_hrcs_rac = format_categories(df_grants_categories, 'grant', 'hrcs_rac')
     df_grants_categories_hrcs_rac.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hrcs_rac.csv"])), index = False)
-
-# patents
