@@ -383,3 +383,5 @@ else:
     # HRCS RAC
     df_grants_categories_hrcs_rac = format_categories(df_grants_categories, 'grant', 'hrcs_rac')
     df_grants_categories_hrcs_rac.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hrcs_rac.csv"])), index = False)
+
+print('Data collection completed.')
