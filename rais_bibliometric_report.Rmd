@@ -57,9 +57,9 @@ pacman::p_load(glue, here, ggpubr, ggrepel, tidyquant, tidyverse)
 
 ```{r load-data}
 # TODO use glue to format file names for a report using the project name from toml file to
-researchers <- read_csv(here("data", "faculty_of_health_sciences_researchers.csv"), 
+researchers <- read_csv(here("data", glue("{params$project_name}_researchers.csv")), 
                         show_col_types = FALSE)
-df_publications <- read_csv(here("data", "faculty_of_health_sciences_publications_details.csv"), 
+df_publications <- read_csv(here("data", glue("{params$project_name}_publications_details.csv")), 
                    show_col_types = FALSE)
 
 df_publications <- df_publications %>%
@@ -613,7 +613,7 @@ The [Australian and New Zealand Standard Research Classification 2020](https://w
 The allocation of a research output to multiple FoRs is a low-level indicator of multi- or interdisciplinary research. Dimensions allocates research to FoRs at two levels: 1st Level FoRs that share a broad methodology, knowledge, and/or perspective with other research outputs; and 2nd Level FoRs that divide the 1st Level FoRs into sub-disciplines. This section of the report focuses on 1st Level FoRs only.
 
 ```{r data-for2020}
-df_for_2020 <- read_csv(here("data", "faculty_of_health_sciences_publications_for_2020.csv"), 
+df_for_2020 <- read_csv(here("data", glue("{params$project_name}_publications_for_2020.csv")), 
                         show_col_types = FALSE)
 
 df_for_2020 <- df_for_2020 %>%
@@ -687,7 +687,7 @@ knitr::kable(for_level_1_summary, align = "lcc",
 ### REF2021 Units of Assessment
 
 ```{r data-uoa}
-df_uoa <- read_csv(here("data", "faculty_of_health_sciences_publications_uoa.csv"), show_col_types = FALSE)
+df_uoa <- read_csv(here("data", glue("{params$project_name}_publications_uoa.csv")), show_col_types = FALSE)
 
 df_uoa <- df_uoa %>%
   filter(type != "preprint")
@@ -745,7 +745,7 @@ knitr::kable(uoa_summary, align = "lcc",
 ### Medical Subject Headings (MeSH)
 
 ```{r data-mesh-terms}
-df_mesh <- read_csv(here("data", "faculty_of_health_sciences_publications_mesh.csv"), show_col_types = FALSE)
+df_mesh <- read_csv(here("data", glue("{params$project_name}_publications_mesh.csv")), show_col_types = FALSE)
 
 df_mesh <- df_mesh %>%
   filter(type != "preprint")
@@ -802,7 +802,7 @@ knitr::kable(top_k_mesh_terms, align = "lcc",
 ### Research, Condition, and Disease Categorization (RCDC)
 
 ```{r data-rcdc}
-df_rcdc <- read_csv(here("data", "faculty_of_health_sciences_publications_rcdc.csv"), show_col_types = FALSE)
+df_rcdc <- read_csv(here("data", glue("{params$project_name}_publications_rcdc.csv")), show_col_types = FALSE)
 
 df_rcdc <- df_rcdc %>%
   filter(type != "preprint")
@@ -858,7 +858,7 @@ knitr::kable(top_k_rcdc, align = "lcc",
 The Dimensions database classifies research outputs based on the seventeen Sustainable Development Goals set out by the United Nations in the [2030 Agenda for Sustainable Development](https://sdgs.un.org/2030agenda).
 
 ```{r data-sdg}
-df_sdg <- read_csv(here("data", "faculty_of_health_sciences_publications_sdg.csv"), 
+df_sdg <- read_csv(here("data", glue("{params$project_name}_publications_sdg.csv")), 
                    show_col_types = FALSE)
 
 df_sdg <- df_sdg %>%
@@ -1123,7 +1123,7 @@ open_access_data %>%  # Remember this is limited to articles only
 ## Co-Citation Percentile Rank
 
 ```{r load-cpr-data}
-df_cpr <- read_csv(here("co_citation_percentile_rank", "research_unit_X_cpr.csv"), 
+df_cpr <- read_csv(here("co_citation_percentile_rank", glue("{params$project_name}_cpr.csv")), 
                    show_col_types = FALSE)
 ```
 
@@ -1252,11 +1252,11 @@ The mean number of citations is potentially misleading due to the sensitivity of
 
 ```{r load-citing-publications}
 df_citing_publications <- read_csv(here("citing_publications", 
-                                        "faculty_of_health_sciences_citing_pubs_details.csv"), 
+                                        glue("{params$project_name}_citing_pubs_details.csv")), 
                                    show_col_types = FALSE)
 
 df_citers <- read_csv(here("citing_publications",
-                           "faculty_of_health_sciences_citing_pubs_citers.csv"), 
+                           glue("{params$project_name}_citing_pubs_citers.csv")), 
                       show_col_types = FALSE) %>%
   distinct(publication_id, country, name, types)
 ```
@@ -1459,7 +1459,7 @@ This section looks at collaborations between researchers in the `r params$resear
 
 ```{r load-data-orgs}
 research_organisations <- read_csv(here("data", 
-                                        "faculty_of_health_sciences_research_organisations.csv"),
+                                        glue("{params$project_name}_research_organisations.csv")),
                                    show_col_types = FALSE)
 
 research_organisations <- research_organisations %>%
@@ -2162,7 +2162,7 @@ df_uk_orgs <- research_organisations %>%
 This section presents an overview of the online attention received by research outputs produced by researchers in the `r params$research_unit`. 
 
 ```{r data-altmetrics}
-df_altmetrics <- read_csv(here("data", "fohs_altmetric_details.csv"), show_col_types = FALSE)
+df_altmetrics <- read_csv(here("data", glue("{params$project_name}_altmetric_details.csv")), show_col_types = FALSE)
 df_altmetrics <- df_altmetrics %>%  
   distinct(doi, .keep_all = TRUE) %>%
   arrange(desc(Altmetric)) %>%
