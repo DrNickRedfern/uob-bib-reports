@@ -75,7 +75,7 @@ Navigate to the `co_citation_percentile_rank` folder in the project folder.
 
 ### Generate the bibliography
 
-Navigate to the `bibliography` folder in the project folder.
+Open RStudio and load the project. Navigate to the `bibliography` folder in the project folder in the `files` tab.
 
 **10. Run the `generate_bibliography.R` file to download bibliography information from Crossref. Copy the `.bib` file to the main project directory, so that it is in the same folder as the `.rproj` file.**
 
