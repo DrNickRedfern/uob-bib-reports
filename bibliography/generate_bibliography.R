@@ -1,6 +1,8 @@
-pacman::p_load(here, rcrossref, tidyverse)
+pacman::p_load(glue, here, rcrossref, tidyverse)
 
-publications <- read_csv(here("data", "faculty_of_health_sciences_publications_details.csv"))
+project_name <- blogdown::read_toml('bibliometric_report_params.toml')$project$name
+
+publications <- read_csv(here("data", glue("{project_name}_publications_details.csv")))
 
 df_dois <- publications %>%
   select(doi, type) %>%

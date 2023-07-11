@@ -6,6 +6,16 @@ import os
 import pandas as pd
 import tomli
 
+# * Project parameters
+with open ('bibliometric_report_params.toml', mode = 'rb') as f:
+    CONFIG = tomli.load(f)
+PROJECT_NAME: str = CONFIG['project']['name']
+MIN_YEAR:int = CONFIG['years']['minimum']
+MAX_YEAR: int = CONFIG['years']['maximum']
+REFERENCE_YEAR: int = CONFIG['years']['reference']
+LIMIT: int = CONFIG['search']['limit']
+SKIP: int = CONFIG['search']['skip']
+
 # * Housekeeping
 HOME_DIR = os.getcwd()
 DATA_DIR = os.path.join(HOME_DIR, 'data')
@@ -45,16 +55,6 @@ def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
 # * Log into Dimensions using dsl.ini file
 dimcli.login()
 dsl = dimcli.Dsl()
-
-# * Project parameters
-with open ('bibliometric_report_params.toml', mode = 'rb') as f:
-    CONFIG = tomli.load(f)
-PROJECT_NAME: str = CONFIG['project']['name']
-MIN_YEAR:int = CONFIG['years']['minimum']
-MAX_YEAR: int = CONFIG['years']['maximum']
-REFERENCE_YEAR: int = CONFIG['years']['reference']
-LIMIT: int = CONFIG['search']['limit']
-SKIP: int = CONFIG['search']['skip']
 
 # * Load staff list
 df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'staff_list.csv'))
@@ -125,7 +125,13 @@ dict_output_type = dict(zip(df_publications_details.publication_id, df_publicati
 dict_output_year = dict(zip(df_publications_details.publication_id, df_publications_details.year))
 
 # * Export the dois as a list to paste into JYUCITE
-dois = list(df_publications_details['doi'])
+df_dois = (
+    df_publications_details
+    .filter(['doi'])
+    .drop_duplicates()
+    .astype(str)
+)
+dois = list(df_dois['doi'])
 with open(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_dois_list.txt"])), 'w') as file:
     file.write(', '.join(dois))
 

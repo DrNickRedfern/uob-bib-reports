@@ -1,8 +1,23 @@
+import os
 import pandas as pd
+import tomli
 
 # * Load the dois we want to produce badges for
-# dois = ['10.1163/22134913-bja10046', '10.2190/em.32.2.g']
-df = pd.read_csv('faculty_of_health_sciences_publications_details.csv')
+HOME_DIR = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+DATA_DIR = os.path.join(HOME_DIR, 'data')
+
+with open (os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode = 'rb') as f:
+    CONFIG = tomli.load(f)
+PROJECT_NAME: str = CONFIG['project']['name']
+
+publications = os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_details.csv"]))
+df = pd.read_csv(publications)
+df = (
+     df
+     .filter(['doi'])
+     .drop_duplicates()
+     .astype(str)
+)
 dois = df['doi'].to_list()
 
 # * Construct the html file

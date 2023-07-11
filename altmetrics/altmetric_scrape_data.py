@@ -1,6 +1,14 @@
 from bs4 import BeautifulSoup
 import os
 import pandas as pd
+import tomli
+
+HOME_DIR = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+DATA_DIR = os.path.join(HOME_DIR, 'data')
+
+with open (os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode = 'rb') as f:
+    CONFIG = tomli.load(f)
+PROJECT_NAME: str = CONFIG['project']['name']
 
 # Convert a list to a dictionary
 def Convert(a):
@@ -57,4 +65,4 @@ col = df_results.pop("Altmetric")
 df_results.insert(1, col.name, col)
 
 data_directory = os.getcwd() + '\\data'
-df_results.to_csv(os.path.join(data_directory, "fohs_altmetric_data.csv"), index = False)
+df_results.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_altmetric_data.csv"])), index = False)
