@@ -6,16 +6,6 @@ import os
 import pandas as pd
 import tomli
 
-# * Project parameters
-with open ('bibliometric_report_params.toml', mode = 'rb') as f:
-    CONFIG = tomli.load(f)
-PROJECT_NAME: str = CONFIG['project']['name']
-MIN_YEAR:int = CONFIG['years']['minimum']
-MAX_YEAR: int = CONFIG['years']['maximum']
-REFERENCE_YEAR: int = CONFIG['years']['reference']
-LIMIT: int = CONFIG['search']['limit']
-SKIP: int = CONFIG['search']['skip']
-
 # * Housekeeping
 HOME_DIR = os.getcwd()
 DATA_DIR = os.path.join(HOME_DIR, 'data')
@@ -55,6 +45,16 @@ def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
 # * Log into Dimensions using dsl.ini file
 dimcli.login()
 dsl = dimcli.Dsl()
+
+# * Project parameters
+with open ('bibliometric_report_params.toml', mode = 'rb') as f:
+    CONFIG = tomli.load(f)
+PROJECT_NAME: str = CONFIG['project']['name']
+MIN_YEAR:int = CONFIG['years']['minimum']
+MAX_YEAR: int = CONFIG['years']['maximum']
+REFERENCE_YEAR: int = CONFIG['years']['reference']
+LIMIT: int = CONFIG['search']['limit']
+SKIP: int = CONFIG['search']['skip']
 
 # * Load staff list
 df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'staff_list.csv'))
