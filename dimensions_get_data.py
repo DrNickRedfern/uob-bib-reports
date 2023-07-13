@@ -76,7 +76,7 @@ for i in staff_ids:
 
 df_researchers = (
     df_researchers
-    .filter(['first_name', 'last_name', 'first_publication_year', 'current_research_org.name', 'researcher_id', 'obsolete'])
+    .filter(['first_name', 'last_name', 'first_publication_year', 'current_research_org.name', 'researcher_id', 'obsolete', 'orcid_id'])
     .assign(first_publication_year = lambda df: df['first_publication_year'].astype(int),
             academic_age = REFERENCE_YEAR - df_researchers.first_publication_year,
             full_name = lambda df: df[['first_name', 'last_name']].apply(' '.join, axis = 1) 
@@ -171,7 +171,7 @@ df_publications_categories_sdg.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NA
 
 # RCDC
 df_publications_categories_rcdc = format_categories(df_publications_categories, 'publication', 'rcdc')
-df_publications_categories_rcdc = df_publications_categories_uoa.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
+df_publications_categories_rcdc = df_publications_categories_rcdc.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
 df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_rcdc.csv"])), index = False)
 
 # * Collaborating research organisations 
