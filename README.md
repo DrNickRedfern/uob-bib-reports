@@ -91,4 +91,4 @@ Open RStudio and open the project for the report. Open the file `rais_bibliometr
 
 Generating the report will produce a pdf file (the report), the image files for the report, a LaTeX log file.
 
-**12. Open Windows Terminal from teh project folder and run `move_files.ps1` to create a the folder `report` and move the generated report files to this folder.**
+**12. Open Windows Terminal from the project folder and run `move_files.ps1` to create a the folder `report` and move the generated report files to this folder.**
