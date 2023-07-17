@@ -169,7 +169,7 @@ researchers_key_stats <- tibble(
                           n_researchers_with_outputs,
                           p_researchers_with_orcid)),
   text = c("Researchers with\nDimensions ids",
-           "Currently affiliated\nresearchers",
+           "Currently affiliated\nresearchers*",
            "Researchers with at\nleast one output",
            "Researchers\nwith an ORCiD id"),
   colour = factor(c(1, 2, 3, 4))) %>%
@@ -178,7 +178,7 @@ researchers_key_stats <- tibble(
                          values))
 
 ggplot(data = researchers_key_stats, 
-                  aes(x, y, height = h, width = w, label = text)) +
+       aes(x, y, height = h, width = w, label = text)) +
   geom_tile(aes(fill = colour)) +
   # text for values
   geom_text(colour = "white", fontface = "bold", size = 20,
@@ -190,10 +190,9 @@ ggplot(data = researchers_key_stats,
   scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
   theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null")) +  # remove margin around plot
   theme_void() +
+  labs(caption = str_wrap("* Currently affiliated researchers are defined as researchers whose researcher id is matched to the University of Bradford's organisation id at the time the result set was generated.", width = 80)) +
   guides(fill = "none")
 ```
-
-Please note: *currently affiliated researchers* are defined as researchers whose researcher id is matched to the University of Bradford's organisation id at the time the result set was generated.
 
 \newpage
 
@@ -220,6 +219,8 @@ knitr::kable(df_researcher_outputs, format = "latex", longtable = TRUE,
 \begin{warningblock}
 The number of outputs of a researcher is affected by contract type, teaching workload, career stage, gender, personal interests, and other factors. None of these factors are captured by reporting the number of outputs produced by a researcher and the data should be interpreted with care to avoid bias.
 \end{warningblock}
+
+\newpage
 
 ## Academic age
 
@@ -463,14 +464,14 @@ outputs_key_stats <- tibble(
   text = c("Total research outputs\n",
            "Outputs by currently\naffiliated researchers",
            glue("Relative change in\noutputs, {params$min_year} - {params$max_year}"),
-           "Open access\njournal articles"),
+           "Open access\njournal articles*"),
   colour = factor(c(1, 2, 3, 4))) %>%
   mutate(values = ifelse(text %in% text[3:4],
                          glue("{values}%"), 
                          values))
 
 ggplot(data = outputs_key_stats, 
-                  aes(x, y, height = h, width = w, label = text)) +
+       aes(x, y, height = h, width = w, label = text)) +
   geom_tile(aes(fill = colour)) +
   # text for values
   geom_text(colour = "white", fontface = "bold", size = 20,
@@ -482,10 +483,9 @@ ggplot(data = outputs_key_stats,
   scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
   theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null")) +  # remove margin around plot
   theme_void() +
+  labs(caption = str_wrap("Open access refers to journal articles only. In the future open access requirements will apply to all type of research outputs and the metric will be updated once this change is implemented.", width = 80)) +
   guides(fill = "none")
 ```
-
-Please note: open access refers to journal articles *only*. In the future open access requirements will apply to all type of research outputs and the metric will be updated once this change is implemented. 
 
 ## Overview
 
@@ -546,7 +546,7 @@ open_access_count %>%
 
 ## Where was research published?
 
-Table \@ref(tab:tbl-journals) breaks down the journal articles by researchers in the `r params$research_unit` by venue of publication. Figure \@ref(fig:fig.outputs-publishers) shows the publishers of the journal articles.
+Table \@ref(tab:tbl-journals) breaks down the journal articles by researchers in the `r params$research_unit` by venue of publication. Figure \@ref(fig:fig-outputs-publishers) shows the publishers of the journal articles.
 
 ```{r tbl-journals}
 df_journals_count <- df_publications %>%
@@ -574,10 +574,10 @@ knitr::kable(df_journals_count, align = "cl",
   kableExtra::column_spec(2, width = "40em")
 ```
 
-```{r fig-outputs-publishers, fig.align='center', fig.width=6, fig.height=3.5, fig.pos='H', fig.cap=glue("Publishers of journal articles produced by researchers in the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+```{r fig-outputs-publishers, fig.align='center', fig.width=6, fig.height=7, fig.pos='H', fig.cap=glue("Publishers of journal articles produced by researchers in the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_publications %>%
   filter(type == "article") %>%
-  filter(!is.na(publishers)) %>%
+  filter(!is.na(publisher)) %>%
   distinct(publication_id, .keep_all = TRUE) %>%
   group_by(publisher) %>%
   tally() %>%
@@ -587,8 +587,9 @@ df_publications %>%
   ggplot() +
   geom_col(aes(x = publisher, y = n), fill = discrete_pal[9]) +
   geom_text(aes(x = publisher, y = n, label = n), hjust = -0.5, size = 3) +
-  scale_x_discrete(name = NULL) +
-  scale_y_continuous(name = NULL, expand = c(0, 0.1)) +
+  scale_x_discrete(name = NULL,
+                   labels = function(x) str_wrap(x, width = 40)) +
+  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 45)) +
   coord_flip() +
   my_theme() +
   theme(axis.line.x = element_blank(),
@@ -694,15 +695,15 @@ df_uoa <- df_uoa %>%
 
 # How many outputs don't have an UoA allocated?
 outputs_with_no_uoa <- df_uoa %>%
-  filter(is.na(unit_of_assessment)) %>%
+  filter(is.na(uoa)) %>%
   summarise(n = n_distinct(publication_id)) %>%
   unlist %>%
   unname
 
 # How many different units of assessment are there?
 n_units_of_assessment <- df_uoa %>%
-  filter(!is.na(unit_of_assessment)) %>%
-  summarise(n = n_distinct(unit_of_assessment)) %>%
+  filter(!is.na(uoa)) %>%
+  summarise(n = n_distinct(uoa)) %>%
   unlist %>%
   unname
 
@@ -721,12 +722,12 @@ np_one_uoa <- uoas_per_publication %>%
   filter(UoAs == 1)
 
 uoa_summary <- df_uoa %>%
-  filter(!is.na(unit_of_assessment)) %>%
-  group_by(unit_of_assessment) %>%
+  filter(!is.na(uoa)) %>%
+  group_by(uoa) %>%
   tally(name = "Frequency") %>%
   ungroup() %>%
   mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
-  rename(`Unit of Assessment` = unit_of_assessment)
+  rename(`Unit of Assessment` = uoa)
 ```
 
 Research outputs from the `r params$research_unit` are allocated to **`r n_units_of_assessment`** distinct units of assessment (UoA) based on the classification system used in the [2021 REF](https://www.ref.ac.uk). Table \@ref(tab:tbl-uoa) summarises the number of articles allocated to each unit of assessment. **`r np_one_uoa$n` (`r np_one_uoa$percent`%)** of outputs are allocated to a single UoA. There are `r outputs_with_no_uoa` outputs that have not been allocated a unit of assessment. 
@@ -809,38 +810,37 @@ df_rcdc <- df_rcdc %>%
 
 # How many outputs have at least one rcdc allocated?
 outputs_with_at_least_one_rcdc <- df_rcdc %>%
-  filter(!is.na(RCDC)) %>%
+  filter(!is.na(rcdc)) %>%
   summarise(n = n_distinct(publication_id)) %>%
   unlist %>%
   unname
 
 # How many outputs don't have an rcdc allocated?
 outputs_with_no_rcdc <- df_rcdc %>%
-  filter(is.na(RCDC)) %>%
+  filter(is.na(rcdc)) %>%
   summarise(n = n_distinct(publication_id)) %>%
   unlist %>%
   unname
 
 # How many different rcdc terms are there?
 n_unique_rcdc <- df_rcdc %>%
-  filter(!is.na(RCDC)) %>%
-  summarise(n = n_distinct(RCDC)) %>%
+  filter(!is.na(rcdc)) %>%
+  summarise(n = n_distinct(rcdc)) %>%
   unlist %>%
   unname
 
 top_k_rcdc <- df_rcdc %>%
-  filter(!is.na(RCDC)) %>%
-  group_by(RCDC) %>%
+  filter(!is.na(rcdc)) %>%
+  group_by(rcdc) %>%
   tally(name = "Frequency") %>%
   ungroup() %>%
   mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
   arrange(desc(Frequency)) %>%
-  filter(Percent >= 1)
+  filter(Percent >= 1) %>%
+  rename(`Research, Condition, and Disease Category` = rcdc)
 ```
 
-The [Research, Condition, and Disease Categorization](https://report.nih.gov/funding/categorical-spending/rcdc-process) (RCDC) system is used by the National Institutes of Health and is a biomedical classification system consisting of 237 categories.
-
-Of the research outputs in the result set, **`r outputs_with_at_least_one_rcdc`** are allocated at least one RCDC category, with **`r n_unique_rcdc` unique categories** used across all research outputs. Table \@ref(tab:tbl-rcdc) presents those RCDC categories which account for at least 1% of the total categories.
+The [Research, Condition, and Disease Categorization](https://report.nih.gov/funding/categorical-spending/rcdc-process) (RCDC) system is used by the National Institutes of Health and is a biomedical classification system consisting of 237 categories. Of the research outputs in the result set, **`r outputs_with_at_least_one_rcdc`** are allocated at least one RCDC category, with **`r n_unique_rcdc` unique categories** used across all research outputs. Table \@ref(tab:tbl-rcdc) presents those RCDC categories which account for at least 1% of the total categories.
 
 ```{r tbl-rcdc}
 knitr::kable(top_k_rcdc, align = "lcc", 
@@ -1040,11 +1040,13 @@ ggplot(data = impact_key_stats,
   coord_fixed() +
   scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
   labs(caption = "* Of those outputs that have a Field Citation Ratio") +
-  theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null"),
-        plot.caption = element_text(size = 9)) +  # remove margin around plot
+  theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null"), # remove margin around plot
+        plot.caption = element_text(size = 9, vjust = 1)) +  
   theme_void() +
   guides(fill = "none")
 ```
+
+\newpage
 
 ## Citations
 
@@ -1088,7 +1090,7 @@ Figure \@ref(fig:fig-fcr) plots the distribution of FCR scores for `r params$res
 
 \bigskip
 
-```{r fig-fcr, fig.height=4, fig.pos="t", fig.cap=glue("The distribution of Field Citation Ratio scores for research outputs (n = {n_outputs_with_fcr}) published by the {params$research_unit} in {params$min_year}.")}
+```{r fig-fcr, fig.width = 6, fig.height=3.5, fig.pos="H", fig.cap=glue("The distribution of Field Citation Ratio scores for research outputs (n = {n_outputs_with_fcr}) published by the {params$research_unit} in {params$min_year}.")}
 open_access_data %>%  # Remember this is limited to articles only
   filter(!is.na(field_citation_ratio)) %>%
   ggplot(aes(x = " ", y = field_citation_ratio)) +
@@ -1192,13 +1194,13 @@ $$
 \mathsf{citation\ rate = 365 \times \frac{times\ cited}{days\ output\ has\ been\ available}}
 $$
 
-Figure \@ref(fig:fig-citation-rate) plots the distribution of the citation rates for outputs produced by researchers from the `r params$research_unit`. The median citation rate is **`r citation_rate_summary$median`**, with a range of `r citation_rate_summary$min` to `r citation_rate_summary$max`.
+Figure \@ref(fig:fig-citation-rate) plots the distribution of the citation rates for outputs produced by researchers from the `r params$research_unit`. The median citation rate is **`r citation_rate_summary$median`**, with a range of `r citation_rate_summary$min` to `r citation_rate_summary$max`. Figure \@ref(fig:fig-cpr) plots the distribution of the co-Citation Percentile Ranks for outputs produced by researchers from the `r params$research_unit`. The median CPR is **`r cpr_summary$median`**, with a range of `r cpr_summary$min` to `r cpr_summary$max`.
 
 ```{r fig-citation-rate, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Citation rates for outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 citation_rate_distribution
 ```
 
-Figure \@ref(fig:fig-cpr) plots the distribution of the co-Citation Percentile Ranks for outputs produced by researchers from the `r params$research_unit`. The median CPR is **`r cpr_summary$median`**, with a range of `r cpr_summary$min` to `r cpr_summary$max`.
+\bigskip
 
 ```{r fig-cpr, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Co-Citation Percentile Rank for research outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 cpr_distribution
@@ -1208,7 +1210,7 @@ cpr_distribution
 
 ## Citations of open access articles
 
-Limiting research outputs to *articles* only, Table \@ref(tab:tbl-oa-impact) shows that Gold, Green, and Hybrid open access articles tend to perform better than those that use the Bronze model and non-open access articles. The Green model, in which an article is freely available in an open access repository, Gold model, in which an article is published in a fully open access journal, and the hybrid open access model, in which subscription-based journals allow authors to make individual articles Gold open access immediately on payment of an article publication charge, perform similarly, with higher FCR scores, indicating that articles published using these models of open access tend to receive more citations than similar articles, compared to less open models of publishing. 
+Limiting research outputs to *articles* only, Table \@ref(tab:tbl-oa-impact) shows that Gold, Green, and Hybrid open access articles tend to perform better than those that use the Bronze model and non-open access articles. The mean number of citations is potentially misleading due to the sensitivity of this statistic to outlying data points, with a single highly-cited output able to make the mean value unrepresentative of the data. The median number of citations and the geometric mean of the FCR scores are resistant to these effects and are preferred when interpreting these results.
 
 ```{r tbl-oa-impact}
 open_access_citations <- open_access_data %>%
@@ -1244,18 +1246,16 @@ knitr::kable(open_access_citation_results,
   kableExtra::column_spec(2:7, width = "5em")
 ```
 
-The mean number of citations is potentially misleading due to the sensitivity of this statistic to outlying data points, with a single highly-cited output able to make the mean value unrepresentative of the data. The median number of citations and the geometric mean of the FCR scores are resistant to these effects. Looking at the median and geometric mean results in Table \@ref(tab:tbl-oa-impact), we see that the Bronze open access model has a relatively high number mean number of citations, but also has the lowest median number of citations citations and FCR geomean. This suggests that while some Bronze articles can be highly cited, overall this class of open access performs less well compared to other models.
-
 \newpage
 
 ## Where was research cited?
 
 ```{r load-citing-publications}
-df_citing_publications <- read_csv(here("citing_publications", 
+df_citing_publications <- read_csv(here("data", "citing_publications", 
                                         glue("{params$project_name}_citing_pubs_details.csv")), 
                                    show_col_types = FALSE)
 
-df_citers <- read_csv(here("citing_publications",
+df_citers <- read_csv(here("data", "citing_publications",
                            glue("{params$project_name}_citing_pubs_citers.csv")), 
                       show_col_types = FALSE) %>%
   distinct(publication_id, country, name, types)
@@ -1273,6 +1273,7 @@ df_citing_journals <- df_citing_publications %>%
   group_by(journal_title_raw) %>%
   tally(n = "count") %>%
   ungroup() %>%
+  top_n(., 25, count) %>%
   arrange(desc(count)) %>%
   relocate(count) %>% 
   pivot_wider(names_from = count, values_from = journal_title_raw, values_fn = list) %>%
@@ -1281,19 +1282,20 @@ df_citing_journals <- df_citing_publications %>%
   rownames_to_column(var = "Citing publications") %>%
   rowwise() %>%
   mutate(Journal = toString(Journal)) %>%
-  ungroup()  #?
+  ungroup()
 
 knitr::kable(df_citing_journals, align = "cl", 
              booktabs = TRUE, linesep = "\\addlinespace", longtable = TRUE,
-             caption = glue("Number of citing publications for journals referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")) %>%
+             caption = glue("Number of citing publications in the top 25 journals referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")) %>%
   kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
                             latex_options = c("striped", "HOLD_position", "repeat_header")) %>%
   kableExtra::column_spec(1, width = "5em") %>%
   kableExtra::column_spec(2, width = "40em")
 ```
 
-```{r fig-citing-publishers, fig.align='center', fig.pos='H', fig.width=6, fig.height=5, fig.cap=glue("Number of citing publications by publisher for publications referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")}
+```{r fig-citing-publishers, fig.align='center', fig.pos='H', fig.width=6, fig.height=8, fig.cap=glue("Number of citing publications by publisher referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")}
 df_citing_publishers <- df_citing_publications %>%
+  filter(!is.na(publisher)) %>%
   group_by(publisher) %>%
   tally(n = "citing_publications") %>%
   arrange(desc(citing_publications))
@@ -1359,8 +1361,8 @@ citing_map <- ggplot() +
                        na.value = "lightgray",
                        trans = "log10",
                        name = "Citing publications",
-                       breaks = c(1, 2, 5, 10, 20, 50, 100, 200),
-                       labels = c(1, 2, 5, 10, 20, 50, 100, 200),
+                       breaks = c(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000),
+                       labels = c(1, 2, 5, 10, 20, 50, 100, 200, 500, 1000),
                        limits = c(1, max(df_citing_countries$frequency)),
                        guide = guide_colourbar(barwidth = 15,
                                                barheight = 1,
@@ -1417,6 +1419,11 @@ ggplot(data = df_citing_orgs, aes(x = name, y = frequency)) +
         panel.grid.major.y = element_blank())
 ```
 
+```{r set-org-colours}
+df_org_types_colours <- data.frame(org_type = c("Archive", "Company", "Education", "Facility", "Government", "Healthcare", "Nonprofit", "Other"),
+                                   colour = discrete_pal[2:9])
+```
+
 ```{r fig-citing-types, fig.align='center', fig.pos='H', fig.width=5, fig.cap=glue("Types of organisation citing research outputs by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_citing_types <- df_citers %>%
   filter(!is.na(types)) %>%
@@ -1427,24 +1434,29 @@ df_citing_types <- df_citers %>%
   mutate(prop = round(count/sum(count), 3),
          cum_count = rev(cumsum(rev(count))),
          pos = count/2 + lead(cum_count, 1),
-         pos = if_else(is.na(pos), count/2, pos))
+         pos = if_else(is.na(pos), count/2, pos),
+         colour = VLOOKUP(types, df_org_types_colours, org_type, colour))
 
 df_citing_types$types <- factor(df_citing_types$types,
                                 levels = df_citing_types$types[order(df_citing_types$count)])
 
-df_citing_types %>%
-  ggplot(aes(x = 2, y = count, fill = types)) +
+df_citing_types$colour <- factor(df_citing_types$colour,
+                                levels = df_citing_types$colour[order(df_citing_types$count)])
+
+ggplot(data = df_citing_types, aes(x = 2, y = count, fill = colour)) +
   geom_col(colour = "black", linewidth = 0.5) +
   geom_label_repel(aes(y = pos,
                        label = glue("{types} ({scales::percent(prop)})"), 
-                       fill = types),
+                       fill = colour),
                    size = 3.5,
                    nudge_x = 1,
-                   colour = c(rep("white", 4), "black"),
+                   colour = c("black", 
+                              rep("white", length(df_citing_types$types) - 2),
+                              "black"),
                    show.legend = FALSE) +
-  scale_x_discrete(name = "Type of organisation") +
-  scale_y_continuous(name = "Frequency") +
-  scale_fill_manual(name = NULL, values = discrete_pal[c(9,8,7,5,3)]) +
+  scale_fill_identity(name = NULL,
+                      labels = df_citing_types$types,
+                      breaks = df_citing_types$colour) +
   coord_polar(theta = "y", start = 0, direction = -1) +
   xlim(0.1, 3) +
   theme_void() +
@@ -1464,11 +1476,6 @@ research_organisations <- read_csv(here("data",
 
 research_organisations <- research_organisations %>%
   filter(type != "preprint")
-```
-
-```{r set-org-colours}
-df_org_types_colours <- data.frame(org_type = c("Archive", "Company", "Education", "Facility", "Government", "Healthcare", "Nonprofit", "Other"),
-                                   colour = discrete_pal[2:9])
 ```
 
 ```{r data-collab-types}
@@ -1621,10 +1628,9 @@ ggplot(data = collab_key_stats,
   scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
   theme(plot.margin = unit(c(-0.30, 0 , 0, 0), "null")) +  # remove margin around plot
   theme_void() +
+  labs(caption = str_wrap("Collaboration refers to outputs where at least one author is not from the University of Bradford.", width = 80)) +
   guides(fill = "none")
 ```
-
-Please note: *collaboration* here refers to outputs where at least one author is *not* from the University of Bradford.
 
 \newpage
 
@@ -1649,7 +1655,7 @@ knitr::kable(df_types_of_collaboration, align = "lcc",
 
 \newpage
 
-```{r fig-collab-summary, fig.align='center', fig.width = 6, fig.height = 4, fig.pos='H', fig.cap=glue("Research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+```{r fig-collab-summary, fig.align='center', fig.width = 6, fig.height = 3.5, fig.pos='H', fig.cap=glue("Research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 # Stacked bar chart of collaboration types by year
 research_organisations_2 %>%
   group_by(year, collaboration) %>%
@@ -1680,7 +1686,7 @@ research_organisations_2 %>%
 
 \bigskip
 
-```{r fig-collab-cumulative-types, fig.align='center', fig.width = 6, fig.height = 4, fig.pos='H', fig.cap=glue("Cumualtive research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+```{r fig-collab-cumulative-types, fig.align='center', fig.width = 6, fig.height = 3.5, fig.pos='H', fig.cap=glue("Cumualtive research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 # Cumulative bar chart of collaboration types
 research_organisations_2 %>%
   filter(!is.na(year)) %>%  # This will need to be removed later 
@@ -1738,7 +1744,7 @@ df_collaborating_countries %>%
   geom_col(fill = discrete_pal[9]) +
   geom_text(aes(label = frequency), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL, limits = rev) +
-  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 160)) +
+  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 165)) +
   coord_flip() +
   theme_light() +
   theme(axis.text.x = element_blank(),
@@ -1760,9 +1766,9 @@ collab_map <- ggplot() +
    scale_fill_distiller(palette = params$palette,
                        na.value = "lightgray",
                        trans = "log10",
-                       name = "Citing publications",
-                       breaks = c(1, 2, 5, 10, 20, 50, 100, 200),
-                       labels = c(1, 2, 5, 10, 20, 50, 100, 200),
+                       name = "Collaborations",
+                       breaks = c(1, 2, 5, 10, 20, 50, 100, 200, 500),
+                       labels = c(1, 2, 5, 10, 20, 50, 100, 200, 500),
                        limits = c(1, max(df_collaborating_countries$frequency)),
                        guide = guide_colourbar(barwidth = 15,
                                                barheight = 1,
@@ -1784,7 +1790,7 @@ collab_map <- ggplot() +
 collab_map
 ```
 
-\medskip
+\bigskip
 
 ```{r fig-countries-cumulative, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap=glue("The cumulative number of research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_collaborating_countries <- df_collaborating_countries %>%
@@ -1850,8 +1856,8 @@ ggplot(data = top_15_orgs, aes(x = organisation_name, y = count, fill = colour))
                      limits = c(0, 45),
                      expand = c(0, 0.1)) +
   scale_fill_identity(name = "Type of research organisation",
-                      labels = top_15_orgs$organisation_type,
-                      breaks = top_15_orgs$colour,
+                      labels = df_org_types_colours$org_type,
+                      breaks = df_org_types_colours$colour,
                       guide = (guide_legend(title.position = "top"))) +
   coord_flip() +
   theme_light() +
@@ -1915,13 +1921,14 @@ research_organisations %>%
   ungroup() %>%
   ggplot(aes(x = year, y = n, fill = fct_rev(organisation_type))) +
   geom_bar(stat = "identity") +
-  scale_x_continuous(name = "Year") +
+  scale_x_continuous(name = NULL) +
   scale_y_continuous(name = "Outputs",
                      limits = c(0, 140),
                      breaks = seq(0, 140, 20)) +
   scale_fill_manual(name = "Organisation type",
                     values = rev(discrete_pal),
-                    guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+                    guide = (guide_legend(title.position = "top", 
+                                          title.hjust = 0, reverse = TRUE))) +
   my_theme() +
   theme(axis.line.x = element_line(colour = "gray"),
         legend.position = "bottom",
@@ -1948,11 +1955,12 @@ research_organisations %>%
   mutate(cumulative_sum = cumsum(n)) %>%
   ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(organisation_type))) +
   geom_bar(stat = "identity") +
-  scale_x_continuous(name = "Year") +
+  scale_x_continuous(name = NULL) +
   scale_y_continuous(name = "Collaborations") +
   scale_fill_manual(name = "Organisation type",
                     values = rev(discrete_pal),
-                    guide = (guide_legend(title.position = "top", reverse = TRUE))) +
+                    guide = (guide_legend(title.position = "top", 
+                                          title.hjust = 0, reverse = TRUE))) +
   my_theme() +
   theme(axis.line.x = element_line(colour = "gray"),
         legend.position = "bottom",
@@ -2085,6 +2093,7 @@ df_int_non_edu_collab <- research_organisations %>%
          organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
          colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour))
 
+
 ggplot(data = df_int_non_edu_collab, aes(x = organisation_name, y = count, fill = colour)) +
   geom_bar(stat = "identity") +
   geom_text(aes(label = count), hjust = -0.5, size = 3) +
@@ -2093,9 +2102,10 @@ ggplot(data = df_int_non_edu_collab, aes(x = organisation_name, y = count, fill 
                      limits = c(0, 4.5),
                      expand = c(0, 0)) +
   scale_fill_identity(name = "Type of research organisation",
-                    labels = df_int_non_edu_collab$organisation_type,
-                    breaks = df_int_non_edu_collab$colour,
-                    guide = (guide_legend(title.position = "top", nrow = 2, byrow = FALSE))) +
+                      labels = df_org_types_colours$org_type,
+                      breaks = df_org_types_colours$colour,
+                      guide = (guide_legend(title.position = "top", 
+                                            nrow = 2, byrow = FALSE))) +
   coord_flip() +
   theme_light() +
   theme(axis.text.x = element_blank(),
@@ -2127,8 +2137,8 @@ df_uk_orgs <- research_organisations %>%
   mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
          organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
          colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour)) 
- 
-  ggplot(data = df_uk_orgs, aes(x = organisation_name, y = count, fill = colour)) +
+
+ggplot(data = df_uk_orgs, aes(x = organisation_name, y = count, fill = colour)) +
   geom_bar(stat = "identity") +
   geom_text(aes(label = count), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL#, labels = function(x) stringr::str_wrap(x, width = 40)
@@ -2137,9 +2147,9 @@ df_uk_orgs <- research_organisations %>%
                      limits = c(0, 50),
                      expand = c(0, 0)) +
   scale_fill_identity(name = "Type of research organisation",
-                    labels = df_uk_orgs$organisation_type,
-                    breaks = df_uk_orgs$colour,
-                    guide = (guide_legend(title.position = "top", nrow = 2, byrow = FALSE))) +
+                      labels = df_org_types_colours$org_type,
+                      breaks = df_org_types_colours$colour,
+                      guide = (guide_legend(title.position = "top", nrow = 2, byrow = FALSE))) +
   coord_flip() +
   theme_light() +
   theme(axis.text.x = element_blank(),
@@ -2207,7 +2217,7 @@ altmetric_bar <- altmetric_scores %>%
                      breaks = breaks,
                      minor_breaks = minor_breaks,
                      trans = "log10") +
-  scale_y_continuous(name = "Frequency") +
+  scale_y_continuous(name = "Outputs") +
   theme_light() +
   theme(axis.line.x = element_line(colour = "gray"),
         axis.ticks = element_blank(),
@@ -2363,7 +2373,7 @@ altmetric_context_distribution <- ggplot(data = df_altmetric_context,
   scale_x_discrete(name = NULL, 
                    limits = rev(levels(df_altmetric_context$clean_name)[3:4])) +
   scale_y_continuous(name = "Percentile") +
-  scale_fill_manual(name = NULL, values = discrete_pal[c(4, 9)]) +
+  scale_fill_manual(name = NULL, values = discrete_pal[c(3, 6)]) +
   coord_flip() +
   my_theme() +
   theme(legend.position = "none")

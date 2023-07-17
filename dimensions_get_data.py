@@ -4,6 +4,7 @@ import dimcli
 from dimcli.utils import *
 import os
 import pandas as pd
+import time
 import tomli
 
 # * Project parameters
@@ -73,6 +74,8 @@ query = """search researchers
 for i in staff_ids:
     researchers_results = dsl.query(query.format(i, LIMIT, SKIP)).as_dataframe().rename(columns = {'id' : 'researcher_id'})
     df_researchers = pd.concat([df_researchers, researchers_results])
+    if i > 1 and i % 15 == 0: 
+        time.sleep(10)
 
 df_researchers = (
     df_researchers
@@ -102,6 +105,8 @@ for i in staff_ids:
     publication_results = dsl.query(query.format(i, MIN_YEAR, MAX_YEAR, LIMIT, SKIP)).as_dataframe()
     publication_results['researcher_id'] = i
     df_publications_details = pd.concat([df_publications_details, publication_results])
+    if i > 1 and i % 15 == 0: 
+        time.sleep(10)
 
 df_publications_details = (
     df_publications_details
