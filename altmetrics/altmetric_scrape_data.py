@@ -3,7 +3,8 @@ import os
 import pandas as pd
 import tomli
 
-HOME_DIR = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+HOME_DIR = os.getcwd()
+ALTMETRICS_DIR = os.path.join(os.getcwd(), "altmetrics")
 DATA_DIR = os.path.join(HOME_DIR, 'data')
 
 with open (os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode = 'rb') as f:
@@ -16,9 +17,11 @@ def Convert(a):
     res_dct = dict(zip(it, it))
     return res_dct
 
+os.chdir(ALTMETRICS_DIR)
+
 with open(r"altmetric_badges_generated.html", "r") as f:
     soup = BeautifulSoup(f, "html.parser")
-
+ 
 # Collect everything needed for generating outputs
 images = soup.findAll('img')
 result = soup.find_all(lambda tag: tag.name == 'div' and tag.get('class') == ['altmetric-embed'])
@@ -64,5 +67,4 @@ for i in range(len(images)):
 col = df_results.pop("Altmetric")
 df_results.insert(1, col.name, col)
 
-data_directory = os.getcwd() + '\\data'
 df_results.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_altmetric_data.csv"])), index = False)

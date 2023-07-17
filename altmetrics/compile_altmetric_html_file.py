@@ -3,7 +3,8 @@ import pandas as pd
 import tomli
 
 # * Load the dois we want to produce badges for
-HOME_DIR = os.path.abspath(os.path.join(os.getcwd(), os.pardir))
+HOME_DIR = os.getcwd()
+ALTMETRICS_DIR = os.path.join(os.getcwd(), "altmetrics")
 DATA_DIR = os.path.join(HOME_DIR, 'data')
 
 with open (os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode = 'rb') as f:
@@ -19,6 +20,8 @@ df = (
      .astype(str)
 )
 dois = df['doi'].to_list()
+
+os.chdir(ALTMETRICS_DIR)
 
 # * Construct the html file
 with open('altmetric_html_top.html', 'r') as f:

@@ -135,7 +135,7 @@ df_researcher_outputs <- df_publications %>%
   relocate(Researcher) %>%
   ungroup() %>%
   replace(is.na(.), "NA") %>% 
-  mutate(last_name = VLOOKUP(Researcher, researchers, full_name, last_name)) %>%
+  mutate(last_name = str_split_i(Researcher, " ", -1)) %>%
   arrange(last_name) %>%
   select(-last_name)
 
