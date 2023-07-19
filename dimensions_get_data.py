@@ -2,9 +2,9 @@
 
 import dimcli
 from dimcli.utils import *
+import numpy as np
 import os
 import pandas as pd
-import time
 import tomli
 
 # * Project parameters
@@ -63,19 +63,12 @@ staff_ids = df_staff_list['researcher_id'].tolist()
 
 # * Researchers
 print('Collecting data on researchers')
-df_researchers = pd.DataFrame()
-# Check this with json.dumps rather than having to use a loop
-query = """search researchers 
-        where id = "{}" 
-        return researchers[current_research_org+first_publication_year+orcid_id+first_name+last_name+id+obsolete]
-        limit {} skip {}
-        """
-
-for i in staff_ids:
-    researchers_results = dsl.query(query.format(i, LIMIT, SKIP)).as_dataframe().rename(columns = {'id' : 'researcher_id'})
-    df_researchers = pd.concat([df_researchers, researchers_results])
-    if i > 1 and i % 15 == 0: 
-        time.sleep(10)
+df_researchers = dsl.query(f"""
+                  search researchers
+                    where id in {json.dumps(list(df_staff_list['researcher_id']))}
+                    return researchers[current_research_org+first_publication_year+orcid_id+first_name+last_name+id+obsolete]
+                    limit {LIMIT} skip {SKIP}
+                """).as_dataframe().rename(columns = {'id' : 'researcher_id'})
 
 df_researchers = (
     df_researchers
@@ -95,18 +88,21 @@ dict_researchers = dict(zip(df_researchers.researcher_id, df_researchers.full_na
 # * Publications: details
 # ! Do not use dsl.query_iterative here because it drops duplicates needed for accurate publications counts per researcher
 print('Collecting data on publications')
-df_publications_details = pd.DataFrame()
-query = """search publications where (researchers.id = "{}" and year in [{}:{}] and research_orgs = "grid.6268.a") 
-        return publications[id+doi+year+type+open_access+field_citation_ratio+times_cited+source_title+publisher]
-        limit {} skip {}
-        """
+df_publications_details = dsl.query(f"""search publications 
+                                where (researchers.id in {json.dumps(list(df_researchers['researcher_id']))} and year in [{MIN_YEAR}:{MAX_YEAR}] and research_orgs = "grid.6268.a") 
+        return publications[id+researchers+doi+year+type+open_access+field_citation_ratio+times_cited+source_title+publisher]
+        limit {LIMIT} skip {SKIP}
+        """).as_dataframe()
 
-for i in staff_ids:
-    publication_results = dsl.query(query.format(i, MIN_YEAR, MAX_YEAR, LIMIT, SKIP)).as_dataframe()
-    publication_results['researcher_id'] = i
-    df_publications_details = pd.concat([df_publications_details, publication_results])
-    if i > 1 and i % 15 == 0: 
-        time.sleep(10)
+df_publications_details = df_publications_details.explode('researchers')
+
+df_publications_researchers = (pd.json_normalize(df_publications_details['researchers'])
+                     .set_index(df_publications_details['id'])
+                     .rename(columns={'id':'researcher_id'})
+                     .reset_index()                     
+)
+
+df_publications_details = df_publications_details.merge(df_publications_researchers, on = 'id')
 
 df_publications_details = (
     df_publications_details
@@ -122,6 +118,8 @@ df_publications_details = (
     )
     .set_index('researcher_id')
     .reset_index()
+    .dropna(subset=['full_name'])
+    .drop_duplicates()
 )
 
 df_publications_details.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_details.csv"])), index = False)
@@ -129,24 +127,21 @@ df_publications_details.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_p
 dict_output_type = dict(zip(df_publications_details.publication_id, df_publications_details.type))
 dict_output_year = dict(zip(df_publications_details.publication_id, df_publications_details.year))
 
-# * Export the dois as a list to paste into JYUCITE
-df_dois = (
-    df_publications_details
-    .filter(['doi'])
-    .drop_duplicates()
-    .astype(str)
-)
-dois = list(df_dois['doi'])
-with open(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_dois_list.txt"])), 'w') as file:
-    file.write(', '.join(dois))
-
 # * Publications: categories
 # ! Use dsl.query_iterative here to save time - don't need duplicates when using metrics for publications
-df_publications_categories = dsl.query_iterative(f"""
-                 search publications
-                    where id in {json.dumps(list(df_publications_details['publication_id']))}
-                    return publications[id+category_uoa+mesh_terms+category_sdg+category_for_2020+category_rcdc]
-""").as_dataframe().rename(columns={'id': 'publication_id'})
+df_split = np.array_split(df_publications_details, 3)
+
+df_publications_categories = pd.DataFrame()
+for i in range(len(df_split)):
+    pubs = df_split[i]['publication_id'].drop_duplicates()
+    results = dsl.query(f"""search publications
+           where id in {json.dumps(list(pubs))}
+           return publications[id+category_uoa+mesh_terms+category_sdg+category_for_2020+category_rcdc]
+           limit {LIMIT} skip {SKIP}"""
+    ).as_dataframe()
+    df_publications_categories = pd.concat([df_publications_categories, results])
+
+df_publications_categories = df_publications_categories.rename(columns={'id':'publication_id'})
 
 # UoA
 df_publications_categories_uoa = format_categories(df_publications_categories, 'publication', 'uoa')
@@ -181,12 +176,17 @@ df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_N
 
 # * Collaborating research organisations 
 print('Collecting data on research organisations')
-res_publications_organisations = dsl.query_iterative(f"""
-                    search publications
-                    where id in {json.dumps(list(df_publications_details['publication_id']))}
-                    return publications[id+research_orgs]""")  
+res_publications_organisations = pd.DataFrame()
+for i in range(len(df_split)):
+    pubs = df_split[i]['publication_id'].drop_duplicates()
+    results = dsl.query(f"""search publications
+           where id in {json.dumps(list(pubs))}
+           return publications[id+research_orgs]
+           limit {LIMIT} skip {SKIP}"""
+    ).as_dataframe()
+    res_publications_organisations = pd.concat([res_publications_organisations, results])
 
-df_research_organisations = pd.json_normalize(res_publications_organisations.publications).explode('research_orgs')
+df_research_organisations = res_publications_organisations.explode('research_orgs')
 df_research_organisations = pd.json_normalize(df_research_organisations['research_orgs']).set_index(df_research_organisations['id'])
 df_research_organisations = (
     df_research_organisations
@@ -205,33 +205,40 @@ df_research_organisations.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "
 
 # * Citing publications
 print('Collecting data on citing publications')
-df_cit_pubs = dsl.query_iterative(f"""
-                                   search publications 
-                                   where reference_ids in {json.dumps(list(df_publications_details['publication_id']))} 
-                                   return publications[id+doi+year+authors+type+journal_title_raw+research_orgs+category_for_2020+publisher]
-                                   """).as_dataframe().rename(columns={'id' : 'publication_id'})
+df_cit_pubs = pd.DataFrame()
+for i in range(len(df_split)):
+    pubs = df_split[i]['publication_id'].drop_duplicates()
+    results = dsl.query_iterative(f"""search publications
+           where reference_ids in {json.dumps(list(pubs))}
+           return publications[id+doi+year+authors+type+journal_title_raw+research_orgs+category_for_2020+publisher]
+           """
+    ).as_dataframe()
+    df_cit_pubs = pd.concat([df_cit_pubs, results])
 
 # Citing publications details
 df_cit_pubs_details = (
     df_cit_pubs
+    .rename(columns={'id':'publication_id'})
     .filter(['publication_id', 'doi', 'journal_title_raw', 'type', 'year', 'publisher'])
     .pipe(lambda df: df[df['type'] != 'preprint'])
 ).to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_details.csv"])), index = False)
 
 # Citing organisations details
 df_cit_pubs_orgs = df_cit_pubs.explode('research_orgs')
-df_cit_pubs_orgs = pd.json_normalize(df_cit_pubs_orgs['research_orgs']).set_index(df_cit_pubs_orgs['publication_id'])
+df_cit_pubs_orgs = pd.json_normalize(df_cit_pubs_orgs['research_orgs']).set_index(df_cit_pubs_orgs['id'])
 df_cit_pubs_orgs = (
     df_cit_pubs_orgs
     .explode('types')
     .filter(['country_name', 'name', 'types'])
     .reset_index()
+    .rename(columns={'id':'publication_id'})
 )
 
 # Citing authors details
 df_cit_pubs_authors = (
     df_cit_pubs
     .explode('authors')
+    .rename(columns={'id':'publication_id'})
     .filter(['publication_id', 'authors'])
     .set_index('publication_id')
 )
@@ -257,14 +264,15 @@ df_output = df_output.drop_duplicates()
 df_output.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_citers.csv"])), index = False)
 
 # Citing publications research areas
+df_cit_pubs = df_cit_pubs.rename(columns={'id':'publication_id'})
 df_citations_for_2020 = format_categories(df_cit_pubs, 'publication', 'for_2020')
 df_citations_for_2020[['for_2020_code','for_2020']] = df_citations_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
 df_citations_for_2020.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_for_2020.csv"])), index = False)
 
 # * Grants
 query = """search grants where (researchers in {} and active_year in [{}:{}] and research_orgs = "grid.6268.a")
-return grants[id+title+active_year+end_date+start_year+research_orgs+funder_org_name+funder_org_countries+funding_gbp+project_numbers+investigators+researchers] 
-limit {} skip {}"""
+           return grants[id+title+active_year+end_date+start_year+research_orgs+funder_org_name+funder_org_countries+funding_gbp+project_numbers+investigators+researchers] 
+           limit {} skip {}"""
 grants = dsl.query(query.format(json.dumps(list(df_researchers['researcher_id'])), MIN_YEAR, MAX_YEAR, LIMIT, SKIP))
 
 if grants.stats['total_count'] == 0:

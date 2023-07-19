@@ -10,16 +10,30 @@ df_dois <- publications %>%
   filter(!is.na(doi)) %>%
   distinct(doi, type)
 
-refs <- cr_cn(
-  df_dois$doi,
-  format = "bibtex",
-  style = "apa",
-  locale = "en-GB",
-  raw = FALSE,
-  .progress = "text",
-  url = NULL,
-  cache = TRUE
-)
+df_dois_x <- df_dois %>% 
+  group_by((row_number()-1) %/% (n()/4)) %>%
+  group_split()
+
+refs <- list()
+
+for (i in 2:length(df_dois_x)){
+  
+  Sys.sleep(10)
+  
+  refs_temp <- cr_cn(
+    df_dois_x[[i]]$doi,
+    format = "bibtex",
+    style = "apa",
+    locale = "en-GB",
+    raw = FALSE,
+    .progress = "text",
+    url = NULL,
+    cache = TRUE
+  )
+  
+  refs <- c(refs, refs_temp)
+  
+}
 
 myfile = file("bibliography.bib")
 

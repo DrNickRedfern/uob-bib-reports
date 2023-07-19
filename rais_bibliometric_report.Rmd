@@ -101,24 +101,28 @@ The result set includes all research outputs from `r params$research_unit` *publ
 
 ```{r data-researchers}
 # Number of researchers in the sample
-n_researchers_in_results <- dim(researchers)[1]
+n_researchers_in_results <- n_distinct(researchers$full_name)
 
 # Number of currently affiliated researchers
 # Remember this is from all researchers and not just researchers with publications
 n_currently_affiliated_researchers <- researchers %>%
   filter(current_research_org.name == "University of Bradford") %>%
-  summarise(n = n_distinct(researcher_id)) %>%
+  summarise(n = n_distinct(full_name)) %>%
   unlist %>%
   unname
 
 # Number of researchers with research outputs
-n_researchers_with_outputs <- n_distinct(df_publications$researcher_id)
+n_researchers_with_outputs <- n_distinct(df_publications$full_name)
 
 # Number of researchers without orcid id
-n_researchers_without_orcid <- sum(is.na(researchers$orcid_id))
+n_researchers_without_orcid <- researchers %>%
+  distinct(full_name, orcid_id) %>%
+  summarise(n = length(orcid_id) - sum(is.na(orcid_id))) %>%
+  unlist %>%
+  unname
 
 # Number of researchers with orcid ids
-n_researchers_with_orcid <- length(researchers$researcher_id) - n_researchers_without_orcid
+n_researchers_with_orcid <- n_researchers_in_results - n_researchers_without_orcid
 
 # Percentage of researchers with orcid ids
 p_researchers_with_orcid <- round(100 * (n_researchers_with_orcid/n_researchers_in_results), 0)
@@ -233,7 +237,7 @@ academic_age_bins <- c(0, 1, seq(5, 50, 5))
 academic_age_tags <- c("Below 1", "1 to 5", "6 to 10", "11 to 15", "16 to 20", "21 to 25", "26 to 30", "31 to 35", "36 to 40", "41 or above")
 
 academic_age <- researchers %>%
-  select(researcher_id, academic_age, total_publications) %>%
+  select(full_name, researcher_id, academic_age, total_publications) %>%
   mutate(tag = case_when(
     academic_age < 1 ~ academic_age_tags[1],
     academic_age >= 1 & academic_age < 6 ~ academic_age_tags[2],
@@ -249,6 +253,7 @@ academic_age <- researchers %>%
   filter(!is.na(total_publications))
 
 p_younger_than_eleven <- academic_age %>%
+  distinct(full_name, academic_age) %>%
   summarise(n = sum(academic_age < 11)) %>%
   mutate(n = 100 * (n/length(academic_age$academic_age))) %>%
   round(1) %>%
@@ -272,7 +277,7 @@ ggplot(data = academic_age) +
   stat_count(geom = "text", aes(x = tag, label = after_stat(count)), hjust = -0.5, size = 3) +
   scale_x_discrete(name = "Academic age", drop = FALSE) +
   scale_y_continuous(expand = c(0, 0.1),
-                     limits = c(0, 15)) +
+                     limits = c(0, 20)) +
   my_theme() +
   coord_flip() +
   theme(axis.line.x = element_blank(),
@@ -546,9 +551,15 @@ open_access_count %>%
 
 ## Where was research published?
 
-Table \@ref(tab:tbl-journals) breaks down the journal articles by researchers in the `r params$research_unit` by venue of publication. Figure \@ref(fig:fig-outputs-publishers) shows the publishers of the journal articles.
 
-```{r tbl-journals}
+```{r data-journals}
+n_journals <- df_publications %>%
+  filter(type == "article") %>%
+  filter(!is.na(source_title)) %>%
+  summarise(n = n_distinct(source_title)) %>%
+  unname %>%
+  unlist
+
 df_journals_count <- df_publications %>%
   filter(type == "article") %>%
   filter(!is.na(source_title)) %>%
@@ -558,6 +569,7 @@ df_journals_count <- df_publications %>%
   ungroup() %>%
   arrange(desc(count)) %>%
   relocate(count) %>% 
+  filter(count > 1) %>%
   pivot_wider(names_from = count, values_from = source_title, values_fn = list) %>%
   t() %>% data.frame %>% 
   rename(Journal = 1) %>%
@@ -565,16 +577,20 @@ df_journals_count <- df_publications %>%
   rowwise() %>%
   mutate(Journal = toString(Journal)) %>%
   ungroup()
+```
 
+Researchers in the `r params$research_unit` published journal articles in `r n_journals` journals. Table \@ref(tab:tbl-journals) breaks down the number of journal articles by researchers in the `r params$research_unit` by venue of publication, showing only those journals which published more than one article. Figure \@ref(fig:fig-outputs-publishers) shows the publishers of the journal articles.
+
+```{r tbl-journals}
 knitr::kable(df_journals_count, align = "cl", 
              booktabs = TRUE, linesep = "\\addlinespace", longtable = TRUE,
-             caption = glue("Number of outputs per venue of publication for outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Plesae note: not all reseaarch outputs listed in Dimensions have an identified venue of publication (e.g., monographs and conference proceedings.)")) %>%
+             caption = glue("Number of outputs for the top venues of publication for outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Plesae note: not all reseaarch outputs listed in Dimensions have an identified venue of publication (e.g., monographs and conference proceedings.)")) %>%
   kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
                             latex_options = c("striped", "HOLD_position", "repeat_header")) %>%
   kableExtra::column_spec(2, width = "40em")
 ```
 
-```{r fig-outputs-publishers, fig.align='center', fig.width=6, fig.height=7, fig.pos='H', fig.cap=glue("Publishers of journal articles produced by researchers in the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+```{r fig-outputs-publishers, fig.align='center', fig.width=6, fig.height=8, fig.pos='H', fig.cap=glue("Publishers of journal articles produced by researchers in the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_publications %>%
   filter(type == "article") %>%
   filter(!is.na(publisher)) %>%
@@ -589,7 +605,7 @@ df_publications %>%
   geom_text(aes(x = publisher, y = n, label = n), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL,
                    labels = function(x) str_wrap(x, width = 40)) +
-  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 45)) +
+  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 100)) +
   coord_flip() +
   my_theme() +
   theme(axis.line.x = element_blank(),
@@ -646,7 +662,8 @@ for_level_1_summary <- df_for_2020 %>%
   ungroup() %>%
   mutate(Percent = round(100 * Frequency/sum(Frequency), 1)) %>%
   arrange(desc(Percent)) %>%
-  rename(`Level 1 Field of Research` = for_2020)
+  rename(`Level 1 Field of Research` = for_2020) %>%
+  filter(Percent > 1)
 
 # Get the number level 1 FoR 2020 categories
 for_2020_level_1_per_publication <- df_for_2020 %>%
@@ -737,8 +754,8 @@ knitr::kable(uoa_summary, align = "lcc",
              booktabs = TRUE, linesep = "\\addlinespace",
              caption = glue("Number of outputs for the {params$research_unit} allocated to units of assessment based on REF 2021. Plesae note: an output may be assigned to more than one unit of assessment.")) %>%
   kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
-                            latex_options = c("striped", "HOLD_position")) #%>%
-  #kableExtra::column_spec(1, width = "20em")
+                            latex_options = c("striped", "HOLD_position")) %>%
+  kableExtra::column_spec(1, width = "30em")
 ```
 
 \newpage
@@ -959,10 +976,13 @@ i_10_index_by_year <- df_citations %>%
   group_by(year) %>%
   summarise(n = n()) %>%
   ungroup() %>%
-  add_row(year = params$max_year, n = NA) %>%
+  # add_row(year = params$max_year, n = NA) %>%
   rename(Year = year)
 
-i_10_index_overall <- i_10_index_by_year %>% filter(Year != 2023) %>% select(n) %>% sum
+i_10_index_overall <- i_10_index_by_year %>% 
+  #filter(Year != 2023) %>% 
+  select(n) %>% 
+  sum
 p_i_10_index_overall <- round(100 * (i_10_index_overall/n_distinct_outputs), 1)
 ```
 
@@ -1100,8 +1120,9 @@ open_access_data %>%  # Remember this is limited to articles only
   scale_x_discrete(name = NULL) +
   scale_y_continuous(name = "Field Citation Ratio",
                      trans = scales::pseudo_log_trans(base = 10),
-                     breaks = c(0, 1, 5, 10, 20, 30, 40, 50),
-                     labels = c("Uncited", 1, 5, 10, 20, 30, 40, 50)) +
+                     breaks = c(0, 1, 10, 100, 1000),
+                     minor_breaks = c(seq(2, 9, 1), seq(20, 90, 10), seq(200, 900, 100)),
+                     labels = c("Uncited", 1, 10, 100, 1000)) +
   scale_colour_manual(name = "Open access",
                     values = discrete_pal[c(9,8,7,5,3)],
                     guide = (guide_legend(title.position = "top"))) +
@@ -1116,94 +1137,7 @@ open_access_data %>%  # Remember this is limited to articles only
         legend.title = element_text(size = 10),
         panel.border = element_blank(),
         panel.grid.major.y = element_blank(),
-        panel.grid.minor.x = element_blank(),
         text = element_text(size = 10))
-```
-
-\newpage
-
-## Co-Citation Percentile Rank
-
-```{r load-cpr-data}
-df_cpr <- read_csv(here("co_citation_percentile_rank", glue("{params$project_name}_cpr.csv")), 
-                   show_col_types = FALSE)
-```
-
-```{r data-cpr}
-n_outputs_with_cpr <- df_cpr %>%
-  filter(!is.na(CPR)) %>%
-  tally() %>%
-  unlist %>%
-  unname
-
-citation_rate_summary <- df_cpr %>% 
-  filter(!is.na(CPR)) %>%
-   summarise(min = fivenum(citation_rate)[1],
-            Q1 = fivenum(citation_rate)[2],
-            median = fivenum(citation_rate)[3],
-            Q3 = fivenum(citation_rate)[4],
-            max = fivenum(citation_rate)[5])
-
-citation_rate_distribution <- df_cpr %>% 
-  filter(!is.na(CPR)) %>%
-  ggplot(aes(x = " ", y = citation_rate)) +
-  geom_boxplot(outlier.shape = NA, coef = 0) +
-  geom_jitter(width = 0.25, colour = discrete_pal[9]) +
-  scale_x_discrete(name = NULL) +
-  scale_y_continuous(name = "Citation rate") +
-  coord_flip() +
-  my_theme() +
-  theme(panel.grid.major.y = element_blank())
-
-cpr_summary <- df_cpr %>% 
-  filter(!is.na(CPR)) %>%
-   summarise(min = fivenum(CPR)[1],
-            Q1 = fivenum(CPR)[2],
-            median = fivenum(CPR)[3],
-            Q3 = fivenum(CPR)[4],
-            max = fivenum(CPR)[5])
-
-cpr_distribution <- df_cpr %>% 
-  filter(!is.na(CPR)) %>%
-  ggplot(aes(x = " ", y = CPR)) +
-  geom_boxplot(outlier.shape = NA, coef = 0) +
-  geom_jitter(width = 0.25, colour = discrete_pal[9]) +
-  scale_x_discrete(name = NULL) +
-  scale_y_continuous(name = "Co-citation percentile") +
-  coord_flip() +
-  my_theme() +
-  theme(panel.grid.major.y = element_blank())
-```
-
-The *co-Citation Percentile Rank* (CPR) is a new research metric developed by researchers at the [University of Jyväskylä Open Science Centre](https://oscsolutions.cc.jyu.fi/jyucite/about/) using the Dimensions database. The co-Citation Percentile Rank compares the citation rate of an output to the citation rates of articles that are co-cited along with that output, and returns the percentile rank of the target output (i.e., the percentage of citation rates in the citation cohort that are less than or equal to the citation of the target output), with larger values indicating more citation impact in the article's own field. 
-
-Citation distributions are right-skewed, and so the developers of the metric suggest the following *rules of thumb* for interpreting CPR values:
-
-- CPR > 75: an output performs exceptionally relative to its citation cohort
-- CPR > 50: an output performs better than 80% of its citation cohort
-- CPR > 30: an output performs better than 50% of its citation cohort
-- CPR > 12: an output performs better than 20% of its citation cohort
-
-The CPR can be calculated for any output with a DOI that is indexed in the Dimensions database and for which a citation cohort can be identified. 
-
-Citation cohorts were identified for `r n_outputs_with_cpr` outputs produced by the `r params$research_unit`.
-
-The *citation rate* is calculated as the expected number of citations in a 365-day period:
-
-$$
-\mathsf{citation\ rate = 365 \times \frac{times\ cited}{days\ output\ has\ been\ available}}
-$$
-
-Figure \@ref(fig:fig-citation-rate) plots the distribution of the citation rates for outputs produced by researchers from the `r params$research_unit`. The median citation rate is **`r citation_rate_summary$median`**, with a range of `r citation_rate_summary$min` to `r citation_rate_summary$max`. Figure \@ref(fig:fig-cpr) plots the distribution of the co-Citation Percentile Ranks for outputs produced by researchers from the `r params$research_unit`. The median CPR is **`r cpr_summary$median`**, with a range of `r cpr_summary$min` to `r cpr_summary$max`.
-
-```{r fig-citation-rate, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Citation rates for outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
-citation_rate_distribution
-```
-
-\bigskip
-
-```{r fig-cpr, fig.align='center', fig.pos='H', fig.width=6, fig.height=3, fig.cap=glue("Co-Citation Percentile Rank for research outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")}
-cpr_distribution
 ```
 
 \newpage
@@ -1293,25 +1227,29 @@ knitr::kable(df_citing_journals, align = "cl",
   kableExtra::column_spec(2, width = "40em")
 ```
 
-```{r fig-citing-publishers, fig.align='center', fig.pos='H', fig.width=6, fig.height=8, fig.cap=glue("Number of citing publications by publisher referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")}
+```{r fig-citing-publishers, fig.align='center', fig.pos='H', fig.width=6, fig.height=8, fig.cap=glue("Number of citing publications by publisher referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Only the top 20 publishers are shown.")}
 df_citing_publishers <- df_citing_publications %>%
   filter(!is.na(publisher)) %>%
   group_by(publisher) %>%
   tally(n = "citing_publications") %>%
-  arrange(desc(citing_publications))
+  arrange(desc(citing_publications)) %>%
+  top_n(20, citing_publications)
 
 df_citing_publishers$publisher = factor(df_citing_publishers$publisher,
-                            levels = df_citing_publishers$publisher[order(df_citing_publishers$citing_publications)])
+                                        levels = df_citing_publishers$publisher[order(df_citing_publishers$citing_publications)])
 
 ggplot(data = df_citing_publishers,
        aes(x = publisher, y = citing_publications)) +
   geom_bar(stat = "identity", fill = discrete_pal[9]) +
+  geom_text(aes(label = citing_publications), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL,
-                   labels = function(x) str_wrap(x, width = 30)) +
-  scale_y_continuous(name = "Citing publications", breaks = seq(0, 100, 5)) +
+                   labels = function(x) str_wrap(x, width = 40)) +
+  scale_y_continuous(name = NULL, expand = expansion(mult = c(0, 0.1))) +
   coord_flip() +
   my_theme() +
-  theme(panel.grid.major.y = element_blank())
+  theme(axis.line.x = element_blank(),
+        axis.text.x = element_blank(),
+        panel.grid.major.y = element_blank())
 ```
 
 ```{r data-citers-stats}
@@ -1410,7 +1348,8 @@ ggplot(data = df_citing_orgs, aes(x = name, y = frequency)) +
   scale_x_discrete(name = NULL,
                    labels = function(x) str_wrap(x, width = 40)) +
   scale_y_continuous(name = NULL,
-                     limits = c(0, max(df_citing_orgs$frequency + 2))) +
+                     expand = expansion(mult = c(0, 0.1))
+                     ) +
   coord_flip() +
   my_theme() +
   theme(axis.line.x = element_blank(),
@@ -1441,7 +1380,7 @@ df_citing_types$types <- factor(df_citing_types$types,
                                 levels = df_citing_types$types[order(df_citing_types$count)])
 
 df_citing_types$colour <- factor(df_citing_types$colour,
-                                levels = df_citing_types$colour[order(df_citing_types$count)])
+                                 levels = df_citing_types$colour[order(df_citing_types$count)])
 
 ggplot(data = df_citing_types, aes(x = 2, y = count, fill = colour)) +
   geom_col(colour = "black", linewidth = 0.5) +
@@ -1450,8 +1389,9 @@ ggplot(data = df_citing_types, aes(x = 2, y = count, fill = colour)) +
                        fill = colour),
                    size = 3.5,
                    nudge_x = 1,
-                   colour = c("black", 
-                              rep("white", length(df_citing_types$types) - 2),
+                   colour = c("white",
+                              rep("black", 2),
+                              rep("white", 4),
                               "black"),
                    show.legend = FALSE) +
   scale_fill_identity(name = NULL,
@@ -1622,7 +1562,7 @@ ggplot(data = collab_key_stats,
   geom_text(colour = "white", fontface = "bold", size = 20,
             aes(label = values, x = x - 2.9, y = y - 1.5), hjust = 0, vjust = 0) +
   # text for tile headings
-  geom_text(colour = "white", fontface = "bold", size = 6, lineheight = 0.9,
+  geom_text(colour = "white", fontface = "bold", size = 5.5, lineheight = 0.9,
             aes(label = text, x = x - 2.9, y = y + 1.4), hjust = 0) +
   coord_fixed() +
   scale_fill_manual(name = NULL, values = discrete_pal[c(5, 6, 8, 9)]) +
@@ -1744,7 +1684,7 @@ df_collaborating_countries %>%
   geom_col(fill = discrete_pal[9]) +
   geom_text(aes(label = frequency), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL, limits = rev) +
-  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 165)) +
+  scale_y_continuous(name = NULL, expand = expansion(mult = c(0, 0.1))) +
   coord_flip() +
   theme_light() +
   theme(axis.text.x = element_blank(),
@@ -1794,12 +1734,12 @@ collab_map
 
 ```{r fig-countries-cumulative, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 3.5, fig.cap=glue("The cumulative number of research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_collaborating_countries <- df_collaborating_countries %>%
-  mutate(class = ifelse(frequency <= 5, "Other", region))
+  mutate(class = ifelse(frequency <= 10, "Other", region))
 
 df_collaborating_countries$class <- factor(df_collaborating_countries$class, 
                                         levels = unique(df_collaborating_countries$class))
 
-newcol <- colorRampPalette(discrete_pal[3:9])
+newcol <- colorRampPalette(discrete_pal[4:9])
 newpal <- newcol(n_distinct(df_collaborating_countries$class))
 
 chart_cumulative_country_collaborations <- collaboration_countries %>%
@@ -1853,8 +1793,7 @@ ggplot(data = top_15_orgs, aes(x = organisation_name, y = count, fill = colour))
   scale_x_discrete(name = NULL,
                    labels = function(x) stringr::str_wrap(x, width = 32)) +
   scale_y_continuous(name = NULL, 
-                     limits = c(0, 45),
-                     expand = c(0, 0.1)) +
+                     expand = expansion(mult = c(0, 0.1))) +
   scale_fill_identity(name = "Type of research organisation",
                       labels = df_org_types_colours$org_type,
                       breaks = df_org_types_colours$colour,
@@ -1890,7 +1829,7 @@ research_organisations %>%
   geom_col() +
   geom_text(aes(label = count), hjust = -0.5, size = 3) +
   scale_x_discrete(name = NULL, limits = rev) +
-  scale_y_continuous(name = NULL, expand = c(0, 0.1), limits = c(0, 160)) +
+  scale_y_continuous(name = NULL, expand = expansion(mult = c(0, 0.1))) +
   scale_fill_identity() +
   coord_flip() +
   theme_light() +
@@ -2038,6 +1977,7 @@ int_educational_collab <- research_organisations %>%
   ungroup() %>%
   arrange(desc(count)) %>%
   relocate(count) %>% 
+  filter(count > 2) %>%
   pivot_wider(names_from = count, values_from = organisation_name) %>%
   t() %>% data.frame %>% 
   rename(Organisations = 1) %>%
@@ -2048,7 +1988,7 @@ int_educational_collab <- research_organisations %>%
 
 knitr::kable(int_educational_collab, align = "cl", 
              booktabs = TRUE, linesep = "\\addlinespace",
-             caption = glue("Number of research outputs for each educational research organisation based outside the UK collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Please note that an output may be counted multiple times where co-authors were from more than one of organisation.")) %>%
+             caption = glue("Number of research outputs for each educational research organisation based outside the UK collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Please note that an output may be counted multiple times where co-authors were from more than one of organisation. Only research organisations with two or more outputs are shown.")) %>%
   kableExtra::kable_styling(font_size = 9.5, full_width = FALSE, 
                             latex_options = c("striped", "HOLD_position")) %>%
   kableExtra::column_spec(2, width = "40em")
@@ -2081,7 +2021,7 @@ Figure \@ref(fig:fig-outputs-int-orgs) shows the number of research outputs prod
 
 \medskip
 
-```{r fig-outputs-int-orgs, fig.align='center', fig.width = 6, fig.height = 5.5, fig.pos='H', fig.cap=glue("The number of research outputs by organisation type for international non-educational research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
+```{r fig-outputs-int-orgs, fig.align='center', fig.width = 6, fig.height = 6, fig.pos='H', fig.cap=glue("The number of research outputs by organisation type for international non-educational research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")}
 df_int_non_edu_collab <- research_organisations %>%
   filter(organisation_type != "Education") %>%
   filter(country_name != "United Kingdom") %>%
@@ -2097,10 +2037,9 @@ df_int_non_edu_collab <- research_organisations %>%
 ggplot(data = df_int_non_edu_collab, aes(x = organisation_name, y = count, fill = colour)) +
   geom_bar(stat = "identity") +
   geom_text(aes(label = count), hjust = -0.5, size = 3) +
-  scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 40)) +
+  scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 50)) +
   scale_y_continuous(name = NULL, 
-                     limits = c(0, 4.5),
-                     expand = c(0, 0)) +
+                     expand = expansion(mult = c(0, 0.1))) +
   scale_fill_identity(name = "Type of research organisation",
                       labels = df_org_types_colours$org_type,
                       breaks = df_org_types_colours$colour,
@@ -2125,7 +2064,7 @@ Figure \@ref(fig:fig-outputs-UK-orgs) shows the number of research outputs produ
 
 \medskip
 
-```{r fig-outputs-UK-orgs, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 7.5, fig.cap=glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")}
+```{r fig-outputs-UK-orgs, fig.align='center', fig.pos='H', fig.width = 6, fig.height = 6.5, fig.cap=glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")}
 # Bar chart of non-educational research collaborators
 df_uk_orgs <- research_organisations %>%
   filter(organisation_type != "Education") %>%
@@ -2144,8 +2083,7 @@ ggplot(data = df_uk_orgs, aes(x = organisation_name, y = count, fill = colour)) 
   scale_x_discrete(name = NULL#, labels = function(x) stringr::str_wrap(x, width = 40)
   ) +
   scale_y_continuous(name = NULL, 
-                     limits = c(0, 50),
-                     expand = c(0, 0)) +
+                     expand = expansion(mult = c(0, 0.1))) +
   scale_fill_identity(name = "Type of research organisation",
                       labels = df_org_types_colours$org_type,
                       breaks = df_org_types_colours$colour,
@@ -2256,7 +2194,7 @@ outputs_per_altmetric <- df_altmetric_types %>%
   group_by(altmetric) %>%
   tally(name = "outputs") %>%
   ungroup() %>%
-  mutate(percent = round(100 * outputs/n_outputs_with_altmetric_score, 1))
+  mutate(percent = round(100 * outputs/n_unique_outputs, 1))
 
 mentions_per_altmetric <- df_altmetric_types %>%
   group_by(altmetric) %>%
@@ -2265,11 +2203,18 @@ mentions_per_altmetric <- df_altmetric_types %>%
   
 altmetric_summary <- inner_join(outputs_per_altmetric, mentions_per_altmetric, by = "altmetric")
 
-n_outputs_in_news <- altmetric_summary$outputs[altmetric_summary$altmetric == "News"]
-n_mentions_in_news <- altmetric_summary$mentions[altmetric_summary$altmetric == "News"]
+altmetric_summary <- inner_join(outputs_per_altmetric, mentions_per_altmetric, by = "altmetric")
 
-n_outputs_in_policy_docs <- altmetric_summary$outputs[altmetric_summary$altmetric == "Policy documents"]
-n_mentions_in_policy_docs <- altmetric_summary$mentions[altmetric_summary$altmetric == "Policy documents"]
+n_outputs_in_news <- ifelse("News" %in% altmetric_summary$altmetric,
+                            altmetric_summary$outputs[altmetric_summary$altmetric == "News"], 0)
+
+n_mentions_in_news <- ifelse("News" %in% altmetric_summary$altmetric,
+                             altmetric_summary$mentions[altmetric_summary$altmetric == "News"], 0)
+
+n_outputs_in_policy_docs <- ifelse("Policy documents" %in% altmetric_summary$altmetric,
+                                   altmetric_summary$outputs[altmetric_summary$altmetric == "Policy documents"], 0)
+n_mentions_in_policy_docs <- ifelse("Policy documents" %in% altmetric_summary$altmetric,
+                                    altmetric_summary$mentions[altmetric_summary$altmetric == "Policy documents"], 0)
 ```
 
 ## Key stats
@@ -2315,7 +2260,7 @@ A total of **`r n_outputs_with_altmetric_score`** outputs have an Altmetric scor
 altmetric_figure
 ```
 
-Table \@ref(tab:tbl-altmetric-summary) breaks down research outputs by channel of online attention, showing the number of outputs produced by researchers from the `r params$research_unit` that received attention via a particular channel and the total number of mentions received via that channel. Research outputs received attention across a total of `r dim(altmetric_summary)[1] - 1`, excluding Mendeley readers.
+Table \@ref(tab:tbl-altmetric-summary) breaks down research outputs by channel of online attention, showing the number of outputs produced by researchers from the `r params$research_unit` that received attention via a particular channel and the total number of mentions received via that channel. Research outputs received attention across a total of `r dim(altmetric_summary)[1] - 1` differnt channels of attention, excluding Mendeley readers.
 
 A total of **`r n_outputs_in_news`** outputs received **`r n_mentions_in_news`** mentions in mainstream news media.
 
@@ -2326,7 +2271,7 @@ altmetric_summary <- altmetric_summary %>% rename_with(str_to_title)
 
 knitr::kable(altmetric_summary, align = "lccc", 
              booktabs = TRUE, linesep = "\\addlinespace",
-             caption = glue("Online attention of research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}, broken down by the number and percentage of outputs receiving attention via a speciifc channel and the total number of mentions across those outputs.")) %>%
+             caption = glue("Online attention of research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}, broken down by the number and percentage of outputs in the result set receiving attention via a speciifc channel and the total number of mentions across mentioned outputs.")) %>%
   kableExtra::kable_styling(font_size = 10, full_width = FALSE, 
                             latex_options = c("striped", "HOLD_position"))
 ```
