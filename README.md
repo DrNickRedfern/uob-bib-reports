@@ -6,71 +6,9 @@ This README file describes the workflow for generating bibliometric reports usin
 
 ## Folder structure
 
-The folder structure for the project is displayed below.
+The folder structure for the project is displayed in the `tree.log` file.
 
 If any files are missing or in the wrong location the workflow described below will **not** function correctly.
-
-./
-│   .gitignore
-│   .Rhistory
-│   apa_mod_nr.csl
-│   dimensions_get_data.py
-│   eisvogel.latex
-│   LICENSE
-│   move_files.ps1
-│   rais_bibliometric_report.Rmd
-│   rais_bibliometric_report.Rproj
-│   README.md
-│   test.ipynb
-│   tree.log
-│   university_of_bradford_white_logo.png
-│
-├───.Rproj.user
-│   ├───91F64AE8
-│   │   │   rmd-outputs
-│   │   │   saved_source_markers
-│   │   │
-│   │   ├───bibliography-index
-│   │   ├───ctx
-│   │   ├───explorer-cache
-│   │   ├───pcs
-│   │   │       files-pane.pper
-│   │   │       source-pane.pper
-│   │   │       windowlayoutstate.pper
-│   │   │       workbench-pane.pper
-│   │   │
-│   │   ├───presentation
-│   │   ├───profiles-cache
-│   │   ├───sources
-│   │   │   ├───per
-│   │   │   │   ├───t
-│   │   │   │   │       42B743EE
-│   │   │   │   │       42B743EE-contents
-│   │   │   │   │
-│   │   │   │   └───u
-│   │   │   └───prop
-│   │   │           E5DA42A4
-│   │   │           INDEX
-│   │   │
-│   │   ├───tutorial
-│   │   └───viewer-cache
-│   └───shared
-│       └───notebooks
-│               patch-chunk-names
-│               paths
-│
-├───altmetrics
-│       altmetric_data.R
-│       altmetric_html_top.html
-│       altmetric_scrape_data.py
-│       compile_altmetric_html_file.py
-│
-├───bibliography
-│       generate_bibliography.R
-│
-└───source_files
-        my_theme.R
-        numbers2words.R
 
 ---
 
