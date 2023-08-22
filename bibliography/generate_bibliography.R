@@ -16,7 +16,7 @@ df_dois_x <- df_dois %>%
 
 refs <- list()
 
-for (i in 2:length(df_dois_x)){
+for (i in seq_along(df_dois_x)){
   
   Sys.sleep(10)
   
@@ -35,6 +35,6 @@ for (i in 2:length(df_dois_x)){
   
 }
 
-myfile = file("bibliography.bib")
+myfile <- file("bibliography.bib")
 
 writeLines(unlist(lapply(refs, paste, collapse=" ")), con = myfile)

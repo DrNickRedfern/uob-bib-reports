@@ -51,8 +51,14 @@ rsconnect/
 # ini files
 *.ini
 
+# toml files
+*.toml
+
 # ignore data folder
 data/
 
 # ignore notebooks
 *.ipynb
+
+# ignore bibliographies
+*.bib
