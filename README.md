@@ -67,7 +67,7 @@ Navigate to the `altmetric` folder in the project folder.
 
 Open RStudio and load the project. Navigate to the `bibliography` folder in the project folder in the `files` tab.
 
-**8. Run the `generate_bibliography.R` file to download bibliography information from Crossref.
+**8. Run the `generate_bibliography.R` file to download bibliography information from Crossref.**
 
 > Not all items may be discoverable this way and so it may be necessary to manually add bibtex entries to the `bibliography.bib` file. If there is a large number of files that need to be added, this can be done more efficiently by loading the `bibliography.bib` file into **Zotero** and adding new entries using the `import` wizard.
 
