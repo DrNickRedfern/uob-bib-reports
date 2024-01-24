@@ -36,8 +36,10 @@ world_map_data <- function(){
 world_map_plot <- function(df, palette, scale_name = "Scale"){
   
   ggplot() + 
-    geom_polygon(data = df, aes(long, lat, group = group, fill = frequency), 
-                 colour = "darkgray", linewidth = 0.1) +
+    geom_polygon(data = df, aes(long, lat, group = group, fill = frequency,
+                                text = paste0(region, "<br>",
+                                              scale_name, ": ", frequency)), 
+                 colour = "gray30", linewidth = 0.1) +
     scale_fill_distiller(palette = palette,
                          na.value = "lightgray",
                          trans = "log10",

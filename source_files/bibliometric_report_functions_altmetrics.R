@@ -61,7 +61,7 @@ altmetrics_plot <- function(df, discrete_pal){
 altmetric_types <- function(df, unique_outputs = n_unique_outputs){
   
   df_altmetric_types <- df %>%
-    select(-c(altmetric_id:current_affiliation)) %>%
+    select(-c(altmetric_id:last_col())) %>%
     select(-c(rank, Altmetric)) %>%
     pivot_longer(!doi, names_to = "altmetric", values_to = "count") 
   

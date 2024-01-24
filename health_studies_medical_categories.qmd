@@ -1,0 +1,113 @@
+### Medical categories
+
+```{r}
+#| label: data-mesh-terms
+df_mesh <- read_csv(here("data", glue("{params$project_name}_publications_mesh.csv")),
+                    show_col_types = FALSE)
+
+mesh_summary_results <- mesh_summary(df_mesh)
+outputs_with_at_least_one_mesh_term <- mesh_summary_results$outputs_with_at_least_one_mesh_term
+n_unique_mesh_terms <- mesh_summary_results$n_unique_mesh_terms
+outputs_with_no_mesh_term <- mesh_summary_results$outputs_with_no_mesh_term
+top_k_mesh_terms <- mesh_summary_results$top_k_mesh_terms
+```
+
+```{r}
+#| label: data-rcdc
+df_rcdc <- read_csv(here("data", glue("{params$project_name}_publications_rcdc.csv")),
+                    show_col_types = FALSE)
+
+rcdc_summary_results <- rcdc_summary(df_rcdc, p = 1)
+outputs_with_at_least_one_rcdc <- rcdc_summary_results$outputs_with_at_least_one_rcdc
+outputs_with_no_rcdc <- rcdc_summary_results$outputs_with_no_rcdc
+n_unique_rcdc <- rcdc_summary_results$n_unique_rcdc
+top_k_rcdc <- rcdc_summary_results$top_k_rcdc
+```
+
+```{r}
+#| label: data-hrcs-hc
+df_hrcs_hc <- read_csv(here("data", glue("{params$project_name}_publications_hrcs_hc.csv")),
+                       show_col_types = FALSE)
+
+hrcs_hc_summary_results <- hrcs_hc_summary(df_hrcs_hc, p = 1)
+outputs_with_at_least_one_hrcs_hc <- hrcs_hc_summary_results$outputs_with_at_least_one_hrcs_hc
+outputs_with_no_hrcs_hc <- hrcs_hc_summary_results$outputs_with_no_hrcs_hc
+n_unique_hrcs_hc <- hrcs_hc_summary_results$n_unique_hrcs_hc
+top_k_hrcs_hc <- hrcs_hc_summary_results$top_k_hrcs_hc
+```
+
+```{r}
+#| label: data-hrcs-rac
+df_hrcs_rac <- read_csv(here("data", glue("{params$project_name}_publications_hrcs_rac.csv")),
+                       show_col_types = FALSE)
+
+hrcs_rac_summary_results <- hrcs_rac_summary(df_hrcs_rac, p = 1)
+outputs_with_at_least_one_hrcs_rac <- hrcs_rac_summary_results$outputs_with_at_least_one_hrcs_rac
+outputs_with_no_hrcs_rac <- hrcs_rac_summary_results$outputs_with_no_hrcs_rac
+n_unique_hrcs_rac <- hrcs_rac_summary_results$n_unique_hrcs_rac
+top_k_hrcs_rac <- hrcs_rac_summary_results$top_k_hrcs_rac
+```
+
+:::{.panel-tabset}
+
+## MeSH
+
+[Medical Subject Headings](https://www.ncbi.nlm.nih.gov/mesh/) (MeSH) is the NLM controlled vocabulary thesaurus used for indexing articles for PubMed.
+
+A total of **`r outputs_with_at_least_one_mesh_term` outputs** in the result set are allocated at least one MeSH category, with **`r n_unique_mesh_terms` unique terms** used across these outputs. There are `r outputs_with_no_mesh_term` outputs that have not been allocated at least one MeSH term. @tbl-mesh plots the MeSH terms that account for at least 1% of the unique terms.
+
+```{r}
+#| label:  tbl-mesh
+#| tbl-cap: !expr glue("The top {mesh_summary_results$k} occuring MeSH terms for research produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+knitr::kable(top_k_mesh_terms, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+## RCDC
+
+The [Research, Condition, and Disease Categorization](https://report.nih.gov/funding/categorical-spending/rcdc-process) (RCDC) system is used by the National Institutes of Health and is a biomedical classification system consisting of 237 categories. Of the research outputs in the result set, **`r outputs_with_at_least_one_rcdc`** are allocated at least one RCDC category, with **`r n_unique_rcdc` unique categories** used across all research outputs. @tbl-rcdc presents those RCDC categories which account for at least `r rcdc_summary_results$p`% of the total categories.
+
+```{r}
+#| label:  tbl-rcdc
+#| tbl-cap: !expr glue("Research, Condition, and Disease Categories accounting for at least {rcdc_summary_results$p} per cent of the total categories assigned to research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+knitr::kable(top_k_rcdc, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+## HRCS 
+
+The [Health Research Classification System](https://hrcsonline.net) (HRCS) is a system for classifying and analysing all types of biomedical and health related research. The HRCS was developed by the UKCRC Partners as a research management tool. The HRCS is subdivided into Health Categories (HC) and Research Activity Classifications (RAC).
+
+Of the research outputs in the result set, **`r outputs_with_at_least_one_hrcs_hc`** are allocated to at least one health category in the HRCS, with **`r n_unique_hrcs_hc` unique categories** used across all research outputs. @tbl-hrcs-hc presents those HRCS health categories which account for at least `r hrcs_hc_summary_results$p`% of the total categories.
+
+```{r}
+#| label:  tbl-hrcs-hc
+#| tbl-cap: !expr glue("HRCS Health Categories accounting for at least {hrcs_hc_summary_results$p} per cent of the total categories assigned to research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+knitr::kable(top_k_hrcs_hc, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+Of the research outputs in the result set, **`r outputs_with_at_least_one_hrcs_rac`** are allocated to at least one research activity classifications in the HCRS, with **`r n_unique_hrcs_rac` unique categories** used across all research outputs. @tbl-hrcs-rac presents those HCRS research activity classifications which account for at least `r hrcs_rac_summary_results$p`% of the total categories.
+
+```{r}
+#| label:  tbl-hrcs-rac
+#| tbl-cap: !expr glue("HRCS Research Activity Classifications accounting for at least {hrcs_rac_summary_results$p} per cent of the total categories assigned to research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+knitr::kable(top_k_hrcs_rac, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+:::

@@ -1,0 +1,41 @@
+ª   custom.css
+ª   dimensions_get_data.py
+ª   health_studies_medical_categories.qmd
+ª   internal_collaboration.py
+ª   LICENSE
+ª   life_sciences_medical_categories .qmd
+ª   move_files.ps1
+ª   rais_bibliometric_report.qmd
+ª   rais_bibliometric_report.Rproj
+ª   README.md
+ª   tree.txt
+ª   
++---altmetrics
+ª       altmetric_badges.html
+ª       altmetric_data.R
+ª       altmetric_html_top.html
+ª       altmetric_scrape_data.py
+ª       compile_altmetric_html_file.py
+ª       
++---data
+ª       faculty.csv
+ª       
++---images
+ª       Dorabadge1.png
+ª       Dorabadge1_white_background.png
+ª       university_of_bradford_white_logo.png
+ª       
++---source_files
+        bibliometric_report_functions_altmetrics.R
+        bibliometric_report_functions_collaboration.R
+        bibliometric_report_functions_general.R
+        bibliometric_report_functions_impact.R
+        bibliometric_report_functions_outputs.R
+        bibliometric_report_functions_researchers.R
+        corresponding_authors.R
+        df_to_matrix.R
+        internal_network.R
+        my_theme.R
+        numbers2words.R
+        subject_network.R
+        

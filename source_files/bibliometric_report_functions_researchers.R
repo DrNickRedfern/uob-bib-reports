@@ -28,22 +28,34 @@ researchers_summary <- function(df){
   
 }
 
-researchers_outputs <- function(df){
+researchers_outputs <- function(df, faculty_name_ref){
   
-  df %>%
-    group_by(full_name) %>%
+  # df %>%
+  #   group_by(full_name) %>%
+  #   count(year) %>%
+  #   pivot_wider(names_from = year, values_from = n) %>%
+  #   replace(is.na(.), 0) %>%
+  #   mutate(Total = rowSums(across(where(is.numeric)))) %>%
+  #   rename(Researcher = full_name) %>%
+  #   select(order(colnames(.))) %>%
+  #   relocate(Researcher) %>%
+  #   ungroup() %>%
+  #   replace(is.na(.), "NA") %>% 
+  #   mutate(last_name = str_split_i(Researcher, " ", -1)) %>%
+  #   arrange(last_name) %>%
+  #   select(-last_name)
+  
+  df %>% 
+    select(unique_id, year) %>%
+    group_by(unique_id) %>%
     count(year) %>%
-    pivot_wider(names_from = year, values_from = n) %>%
-    replace(is.na(.), 0) %>%
-    mutate(Total = rowSums(across(where(is.numeric)))) %>%
-    rename(Researcher = full_name) %>%
-    select(order(colnames(.))) %>%
-    relocate(Researcher) %>%
     ungroup() %>%
-    replace(is.na(.), "NA") %>% 
-    mutate(last_name = str_split_i(Researcher, " ", -1)) %>%
-    arrange(last_name) %>%
-    select(-last_name)
+    pivot_wider(names_from = year, values_from = n) %>%
+    mutate(Researcher = VLOOKUP(unique_id, faculty_name_ref, unique_id, full_name)) %>%
+    select(-unique_id) %>%
+    relocate(Researcher) %>%
+    replace(is.na(.), 0) %>%
+    adorn_totals(., where = "col")
   
 }
 
@@ -65,7 +77,7 @@ academic_age_summary <- function(df){
   academic_age_tags <- c("Below 1", "1 to 5", "6 to 10", "11 to 15", "16 to 20", "21 to 25", "26 to 30", "31 to 35", "36 to 40", "41 or above")
   
   df_academic_age <- df %>%
-    select(full_name, researcher_id, academic_age, total_publications) %>%
+    select(full_name, academic_age, total_publications) %>%
     mutate(tag = case_when(
       academic_age < 1 ~ academic_age_tags[1],
       academic_age >= 1 & academic_age < 6 ~ academic_age_tags[2],
@@ -99,11 +111,12 @@ academic_age_summary <- function(df){
   
 }
 
-academic_age_plot <- function(df, discrete_pal){
-  
+academic_age_plot <- function(df, discrete_pal, text_size = 4){
+  # TODO deal with variation in text size in different formats
   ggplot(data = df) +
     geom_bar(aes(x = tag), fill = discrete_pal[9]) +
-    stat_count(geom = "text", aes(x = tag, label = after_stat(count)), hjust = -0.5, size = 3) +
+    stat_count(geom = "text", aes(x = tag, label = after_stat(count)), hjust = -0.5#, size = text_size
+               ) +
     scale_x_discrete(name = "Academic age", drop = FALSE) +
     scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
     my_theme() +

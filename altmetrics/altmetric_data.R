@@ -25,8 +25,8 @@ final_res <- res %>%
   filter(!is.na(altmetric_id)) %>%
   select(doi, altmetric_id, details_url, last_updated, 
          published_on, type, score, contains("context.")) %>%
-  mutate(last_updated = as_date(as_datetime(last_updated)),
-         published_on = as_date(as_datetime(published_on))) %>%
+  # mutate(last_updated = as_date(as_datetime(last_updated)),
+  #        published_on = as_date(as_datetime(published_on))) %>%
   rename(raw_score = score) 
 
 names(final_res) <- gsub("\\.", "_", names(final_res))

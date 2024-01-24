@@ -10,7 +10,10 @@ collaboration_summary <- function(df){
     rename_with(str_to_title)
   
   p_collaboration <- df_types_of_collaboration %>%
-    summarise(n = sum(Percent[str_detect(Collaboration, "collaboration")]))
+    filter(Collaboration != "Single authored") %>%
+    summarise(n = sum(Percent)) %>% 
+    unlist() %>% 
+    unname()
   
   output_list <- list("df_types_of_collaboration" = df_types_of_collaboration,
                       "p_collaboration" = p_collaboration)
@@ -78,23 +81,25 @@ collaborating_orgs_summary <- function(df){
     unlist %>%
     unname
   
-  outputs_in_sample_by_type_of_collaborator <- df %>%
-    filter(organisation_name != "University of Bradford") %>%
-    group_by(organisation_type) %>%
-    distinct(publication_id, organisation_type) %>%
-    tally() %>% 
-    ungroup() %>%
-    mutate(Percent = round(100 * n/n_distinct(df$publication_id), 1)) %>%
-    rename(`Organisation type` = organisation_type) %>%
-    rename(Frequency = n)
-  
-  df_types_of_collaborators <- df %>%
+  df_types_of_collaborators <- research_organisations %>%
     filter(organisation_name != "University of Bradford") %>%
     select(organisation_name, organisation_type) %>%
     group_by(organisation_type) %>%
     distinct(organisation_name, organisation_type) %>%
-    tally() %>%
+    tally(n = "Organisations") %>%
+    ungroup() %>%
+    mutate(Percent = round(100 * Organisations/sum(Organisations), 1))
+  
+  
+  outputs_in_sample_by_type_of_collaborator <- research_organisations %>%
+    filter(organisation_name != "University of Bradford") %>%
+    group_by(organisation_type) %>%
+    distinct(publication_id, organisation_type) %>%
+    tally(n = "Outputs") %>% 
     ungroup()
+  
+  outputs_in_sample_by_type_of_collaborator <- inner_join(df_types_of_collaborators, outputs_in_sample_by_type_of_collaborator, by = "organisation_type") %>%
+    rename(`Organisation type` = organisation_type)
   
   output_list <- list("unique_organisations" = unique_organisations,
                       "n_unique_collaborators" = n_unique_collaborators,
@@ -115,7 +120,8 @@ collab_summary_plots <- function(df, discrete_pal){
     group_by(year) %>%
     mutate(prop = n/sum(n)) %>%
     ggplot(aes(x = year, y = prop, fill = fct_rev(collaboration))) +
-    geom_bar(stat="identity") +
+    geom_bar(aes(text = paste0(collaboration, ": ", round(100 * prop, 1), "%")),
+             stat="identity") +
     scale_x_continuous(name = "Year") +
     scale_y_continuous(name = "Outputs", 
                        breaks = seq(0, 1, 0.2), 
@@ -145,7 +151,8 @@ collab_summary_plots <- function(df, discrete_pal){
     filter(sum(n) > 0) %>%
     mutate(cumulative_sum = cumsum(n)) %>%
     ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(collaboration))) +
-    geom_bar(stat = "identity") + 
+    geom_bar(aes(text = paste0(collaboration, ": ", cumulative_sum)),
+                 stat = "identity") + 
     scale_x_continuous(name = "Year") +
     scale_y_continuous(name = "Outputs") + 
     scale_fill_manual(name = "Type of research collaboration",
@@ -254,12 +261,15 @@ collab_orgs_plots <- function(df, unique_organisations, discrete_pal, k = 15){
     group_by(year, organisation_type) %>%
     tally() %>%
     ungroup() %>%
-    ggplot(aes(x = year, y = n, fill = fct_rev(organisation_type))) +
+    ggplot(aes(x = year, y = n, fill = fct_rev(organisation_type),
+               text = paste0("Type: ", organisation_type,
+                             "\nOutputs: ", n))) +
     geom_bar(stat = "identity") +
     scale_x_continuous(name = NULL) +
     scale_y_continuous(name = "Outputs",
-                       limits = c(0, 140),
-                       breaks = seq(0, 140, 20)) +
+                       # limits = c(0, 300),
+                       # breaks = seq(0, 300, 50)
+                       ) +
     scale_fill_manual(name = "Organisation type",
                       values = rev(discrete_pal),
                       guide = (guide_legend(title.position = "top", 
@@ -285,7 +295,9 @@ collab_orgs_plots <- function(df, unique_organisations, discrete_pal, k = 15){
     complete(year, organisation_type, fill = list(n = 0)) %>%
     group_by(organisation_type) %>%
     mutate(cumulative_sum = cumsum(n)) %>%
-    ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(organisation_type))) +
+    ggplot(aes(x = year, y = cumulative_sum, fill = fct_rev(organisation_type),
+               text = paste0("Type: ", organisation_type, 
+                             "\nCumualtive outputs: ", cumulative_sum))) +
     geom_bar(stat = "identity") +
     scale_x_continuous(name = NULL) +
     scale_y_continuous(name = "Collaborations") +
@@ -344,7 +356,7 @@ educational_collab_summary <- function(df){
     ungroup() %>%
     arrange(desc(count)) %>%
     relocate(count) %>% 
-    pivot_wider(names_from = count, values_from = organisation_name) %>%
+    pivot_wider(names_from = count, values_from = organisation_name, values_fn = list) %>%
     t() %>% data.frame %>% 
     rename(Organisations = 1) %>%
     rownames_to_column(var = "Outputs") %>%
@@ -360,8 +372,8 @@ educational_collab_summary <- function(df){
     ungroup() %>%
     arrange(desc(count)) %>%
     relocate(count) %>% 
-    filter(count > 2) %>%
-    pivot_wider(names_from = count, values_from = organisation_name) %>%
+    # filter(count > 2) %>%
+    pivot_wider(names_from = count, values_from = organisation_name, values_fn = list) %>%
     t() %>% data.frame %>% 
     rename(Organisations = 1) %>%
     rownames_to_column(var = "Outputs") %>%
@@ -395,32 +407,131 @@ non_ed_collab_summary <- function(df, discrete_pal, unique_organisations){
     unlist %>%
     unname
   
-  df_int_non_edu_collab <- df %>%
-    filter(organisation_type != "Education") %>%
-    filter(country_name != "United Kingdom") %>%
-    group_by(organisation_name) %>%
-    tally(name = "count") %>%
-    ungroup() %>%
-    arrange(count) %>%
-    mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
-           organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
-           colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour))
+  # df_int_non_edu_collab <- df %>%
+  #   filter(organisation_type != "Education") %>%
+  #   filter(country_name != "United Kingdom") %>%
+  #   group_by(organisation_name) %>%
+  #   tally(name = "count") %>%
+  #   ungroup() %>%
+  #   arrange(count) %>%
+  #   mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+  #          organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
+  #          colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour))
+  # 
+  # df_uk_orgs <- df %>%
+  #   filter(organisation_type != "Education") %>%
+  #   filter(country_name == "United Kingdom") %>%
+  #   group_by(organisation_name) %>%
+  #   tally(name = "count") %>%
+  #   ungroup() %>%
+  #   arrange(count) %>%
+  #   mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
+  #          organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
+  #          colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour)) 
   
-  df_uk_orgs <- df %>%
+  df_uk_orgs <- research_organisations %>%
     filter(organisation_type != "Education") %>%
     filter(country_name == "United Kingdom") %>%
-    group_by(organisation_name) %>%
+    group_by(organisation_type, organisation_name) %>%
     tally(name = "count") %>%
     ungroup() %>%
-    arrange(count) %>%
-    mutate(organisation_name = factor(organisation_name, levels = unique(organisation_name)),
-           organisation_type = VLOOKUP(organisation_name, unique_organisations, organisation_name, organisation_type),
-           colour = VLOOKUP(organisation_type, df_org_types_colours, org_type, colour)) 
+    arrange(desc(count)) %>%
+    relocate(count) %>% 
+    pivot_wider(names_from = count, values_from = organisation_name, values_fn = list) 
+  
+  df_uk_non_ed_orgs <- data.frame()
+  
+  for (i in seq_along(df_uk_orgs$organisation_type)) {
+    
+    df_temp <- df_uk_orgs %>%
+      filter(organisation_type == organisation_type[i]) %>%
+      t() %>% 
+      data.frame %>% 
+      rename(Organisations = 1) %>%
+      rownames_to_column(var = "Outputs") %>%
+      rowwise() %>%
+      mutate(Organisations = toString(Organisations)) %>%
+      ungroup() %>%
+      filter(Organisations != "") %>%
+      mutate(organisation_type = rep(df_uk_orgs$organisation_type[i], length(Organisations))) %>%
+      relocate(organisation_type) %>%
+      slice(-1)
+    
+    df_uk_non_ed_orgs <- rbind.data.frame(df_uk_non_ed_orgs, df_temp)
+    
+  }
+  
+  df_int_orgs <- research_organisations %>%
+    filter(organisation_type != "Education") %>%
+    filter(country_name != "United Kingdom") %>%
+    group_by(organisation_type, organisation_name) %>%
+    tally(name = "count") %>%
+    ungroup() %>%
+    arrange(desc(count)) %>%
+    relocate(count) %>% 
+    pivot_wider(names_from = count, values_from = organisation_name, values_fn = list)
+  
+  df_int_non_ed_orgs <- data.frame()
+  
+  for (i in seq_along(df_int_orgs$organisation_type)) {
+    
+    df_temp <- df_int_orgs %>%
+      filter(organisation_type == organisation_type[i]) %>%
+      t() %>% 
+      data.frame %>% 
+      rename(Organisations = 1) %>%
+      rownames_to_column(var = "Outputs") %>%
+      rowwise() %>%
+      mutate(Organisations = toString(Organisations)) %>%
+      ungroup() %>%
+      filter(Organisations != "") %>%
+      mutate(organisation_type = rep(df_int_orgs$organisation_type[i], length(Organisations))) %>%
+      relocate(organisation_type) %>%
+      slice(-1)
+    
+    df_int_non_ed_orgs <- rbind.data.frame(df_int_non_ed_orgs, df_temp)
+    
+  }
   
   output_list = list("n_uk_non_educational_collaborators" = n_uk_non_educational_collaborators,
                      "n_int_non_educational_collaborators" = n_int_non_educational_collaborators,
-                     "df_int_non_edu_collab" = df_int_non_edu_collab,
-                     "df_uk_orgs" = df_uk_orgs)
+                     # "df_int_non_edu_collab" = df_int_non_edu_collab,
+                     # "df_uk_orgs" = df_uk_orgs
+                     "df_int_non_ed_orgs" = df_int_non_ed_orgs,
+                     "df_uk_non_ed_orgs" = df_uk_non_ed_orgs)
+  
+}
+
+non_ed_collab_outputs <- function(df, df_output_growth){
+  
+  df %>%
+    filter(organisation_type != "Education") %>%
+    distinct(year, publication_id) %>%
+    group_by(year) %>%
+    tally(n = "non_ed_collab") %>%
+    ungroup() %>%
+    inner_join(., df_output_growth, by = "year") %>%
+    select(year, non_ed_collab, total) %>%
+    adorn_totals(., where = "row") %>%
+    mutate(p = non_ed_collab/total,
+           Percent = paste0(round(100 * p, 1), "%")) %>%
+    rename(Year = year, 
+           `Outputs with at least one non-educational collaborator` = non_ed_collab, 
+           `Total outputs` = total)
+  
+}
+
+non_ed_outputs_plot <- function(df, discrete_pal){
+  
+  df %>%
+    filter(Year != "Total") %>%
+    mutate(Year = year(as.Date(as.character(Year), format = "%Y"))) %>% 
+    ggplot(aes(x = Year, y = p)) +
+    geom_bar(stat = "identity", fill = discrete_pal[9]) +
+    scale_x_continuous(name = NULL) +
+    scale_y_continuous(name = NULL, labels = scales::percent) +
+    theme_minimal() +
+    theme(text = element_text(size = 14))
   
 }
 
@@ -431,7 +542,7 @@ non_ed_orgs_plot <- function(df, discrete_pal){
   ggplot(data = df, aes(x = organisation_name, y = count, fill = colour)) +
     geom_bar(stat = "identity") +
     geom_text(aes(label = count), hjust = -0.5, size = 3) +
-    scale_x_discrete(name = NULL, labels = function(x) stringr::str_wrap(x, width = 50)) +
+    scale_x_discrete(name = NULL) + 
     scale_y_continuous(name = NULL, 
                        expand = expansion(mult = c(0, 0.1))) +
     scale_fill_identity(name = "Type of research organisation",

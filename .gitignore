@@ -62,3 +62,9 @@ data/
 
 # ignore bibliographies
 *.bib
+
+# ignore old files in store folder
+store/
+
+# ignore vscode settings
+.vscode

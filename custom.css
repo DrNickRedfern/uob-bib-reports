@@ -1,0 +1,82 @@
+.quarto-title-block .quarto-title-banner {
+  background-image: url(images/university_of_bradford_white_logo.png);
+  background-size: 400px;
+  background-position: right;
+  background-repeat: no-repeat;
+  padding-right: 20px;
+  padding-bottom: 20px;
+  background-origin: content-box;
+}
+
+.key-stats {
+  display: inline-block;
+  margin-left: 5%;
+  margin-right: 3%;
+  padding-left: 5px;
+  padding-right: 5px;
+}
+
+.info-tile {
+  height: 20vw;
+  width: 30vw;
+  max-width: 300px;
+  max-height: 200px;
+  display: inline-block;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  word-wrap: break-word;
+  line-height: 5vw;
+  font-size: 5vw;
+  color: white;
+  font-weight: bold;
+  position: relative;
+  margin: 0.5%
+}
+
+.info-tile-large-text {
+  display: inline-block;
+  font-size: 110%;
+  padding-left: 1vw;
+  margin-top: 1vw;
+  margin-bottom: 1vw;
+}
+
+.info-tile-small-text {
+  display: inline-block;
+  font-size: 40%;
+  line-height: 2.2vw;
+  padding-left: 1vw;
+  padding-right: 1vw;
+  padding-top: 1.5vw;
+  margin-bottom: 1.5vw;
+}
+
+.info-tile-img {
+  position: absolute;
+  color: white;
+  padding-right: 1vw;
+  left: 40%;
+  top: 10%;
+  opacity: .3;
+  height: 10vw;
+  font-size: 10vw;
+}
+
+tfoot {
+  font-size: 80%;
+}
+
+div.abstract-title {
+  visibility: hidden;
+}
+
+div.abstract-title:before {
+  content: "Version";
+  visibility: visible;
+  font-size: 1.4em !important;
+}
+
+div.abstract{
+  font-size: 0.9em;
+}
+

@@ -6,32 +6,28 @@ import numpy as np
 import os
 import pandas as pd
 import tomli
+import json
 
 # * Project parameters
 with open ('bibliometric_report_params.toml', mode = 'rb') as f:
     CONFIG = tomli.load(f)
 PROJECT_NAME: str = CONFIG['project']['name']
-MIN_YEAR:int = CONFIG['years']['minimum']
+RESEARCH_UNIT: str = CONFIG['unit']['research_unit']
+MIN_YEAR: int = CONFIG['years']['minimum']
 MAX_YEAR: int = CONFIG['years']['maximum']
 REFERENCE_YEAR: int = CONFIG['years']['reference']
 LIMIT: int = CONFIG['search']['limit']
 SKIP: int = CONFIG['search']['skip']
 
 # * Housekeeping
-HOME_DIR = os.getcwd()
-DATA_DIR = os.path.join(HOME_DIR, 'data')
-CITING_PUBLICATIONS = os.path.join(DATA_DIR, 'citing_publications')
+HOME_DIR: str = os.getcwd()
+DATA_DIR: str = os.path.join(HOME_DIR, 'data')
+CITING_PUBLICATIONS: str = os.path.join(DATA_DIR, 'citing_publications')
 if not os.path.isdir(CITING_PUBLICATIONS):
     os.mkdir(CITING_PUBLICATIONS)
     print('created folder : ', CITING_PUBLICATIONS)
 else:
     print(CITING_PUBLICATIONS, ': folder already exists.')
-GRANTS_DIR = os.path.join(DATA_DIR, 'grants')
-if not os.path.isdir(GRANTS_DIR):
-    os.mkdir(GRANTS_DIR)
-    print('created folder : ', GRANTS_DIR)
-else:
-    print(GRANTS_DIR, ': folder already exists.')
 
 # * Functions
 def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
@@ -58,8 +54,8 @@ dimcli.login()
 dsl = dimcli.Dsl()
 
 # * Load staff list
-df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'staff_list.csv'))
-staff_ids = df_staff_list['researcher_id'].tolist()
+df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'faculty.csv'))
+df_staff_list = df_staff_list[df_staff_list['level_2_long_desc'] == RESEARCH_UNIT]
 
 # * Researchers
 print('Collecting data on researchers')
@@ -86,10 +82,13 @@ df_researchers.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_researcher
 dict_researchers = dict(zip(df_researchers.researcher_id, df_researchers.full_name))
 
 # * Publications: details
+# TODO Chnage the way data is collected to use publications, author, and affiliations data frames
 # ! Do not use dsl.query_iterative here because it drops duplicates needed for accurate publications counts per researcher
+# TODO Add fields to get the data required for author positions
 print('Collecting data on publications')
 df_publications_details = dsl.query(f"""search publications 
-                                where (researchers.id in {json.dumps(list(df_researchers['researcher_id']))} and year in [{MIN_YEAR}:{MAX_YEAR}] and research_orgs = "grid.6268.a") 
+                                where (researchers.id in {json.dumps(list(df_researchers['researcher_id']))} and 
+                                year in [{MIN_YEAR}:{MAX_YEAR}] and research_orgs = "grid.6268.a") 
         return publications[id+researchers+doi+year+type+open_access+field_citation_ratio+times_cited+source_title+publisher]
         limit {LIMIT} skip {SKIP}
         """).as_dataframe()
@@ -124,19 +123,81 @@ df_publications_details = (
 
 df_publications_details.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_details.csv"])), index = False)
 
+# TODO What other dictionaries should I export for networks
 dict_output_type = dict(zip(df_publications_details.publication_id, df_publications_details.type))
 dict_output_year = dict(zip(df_publications_details.publication_id, df_publications_details.year))
 
-# * Publications: categories
-# ! Use dsl.query_iterative here to save time - don't need duplicates when using metrics for publications
-df_split = np.array_split(df_publications_details, 3)
+# * Split the publications data into chunks (2^9)
+split = int(np.ceil(df_publications_details.shape[0]/512))
+df_publications_details_split = np.array_split(df_publications_details, split)
 
-df_publications_categories = pd.DataFrame()
-for i in range(len(df_split)):
-    pubs = df_split[i]['publication_id'].drop_duplicates()
+# * Authors: positions and corresponding
+df_publications = pd.DataFrame()
+df_authors = pd.DataFrame()
+for i in range(len(df_publications_details_split)):
+    pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
     results = dsl.query(f"""search publications
            where id in {json.dumps(list(pubs))}
-           return publications[id+category_uoa+mesh_terms+category_sdg+category_for_2020+category_rcdc]
+           return publications[id+open_access+type+year+authors+authors_count]
+           limit {LIMIT} skip {SKIP}"""
+    )
+    
+    df_pubs_temp = results.as_dataframe()
+    df_authors_temp = results.as_dataframe_authors()
+    
+    df_publications = pd.concat([df_publications, df_pubs_temp])
+    df_authors = pd.concat([df_authors, df_authors_temp])
+
+# TODO This needs tidying up into a single step
+df_publications = df_publications[df_publications['type'] == 'article']
+df_publications = df_publications.explode('open_access')
+df_publications = df_publications[df_publications['open_access'] != 'oa_all']
+
+df_autpub = pd.merge(
+    left=df_authors,
+    right=df_publications,
+    left_on='pub_id',
+    right_on='id',
+    how='inner' # left
+)
+
+# TODO This needs tidying up into a single step
+df_autpub = df_autpub.drop(columns = ['authors', 'affiliations'])
+df_autpub["author_name"] = df_autpub["last_name"] + [", "] + df_autpub["first_name"]
+df_autpub['author_number'] = df_autpub.groupby(['pub_id']).cumcount()+1;
+
+# ! Untested
+# df_autpub = (
+#     df_autpub
+#     .drop(columns = ['authors', 'affiliations'])
+#     .assign(
+#         full_name = lambda df: df["last_name"] + [", "] + df["first_name"],
+#         author_number = lambda df: df.groupby(['pub_id']).cumcount()+1
+#     )
+# )
+
+df_autpub['AuthorCategory'] = np.where(
+     df_autpub['author_number']==1, 'first_author',
+         np.where(
+            df_autpub['author_number']==df_autpub['authors_count'],'last_author',''
+         )
+)
+
+# Limit to Univeristy of Bradford authors only
+brad_authors = df_autpub[df_autpub['raw_affiliation'].astype(str).str.contains('University of Bradford|Bradford University', case=False)]
+brad_authors = brad_authors.drop(columns=['id', 'raw_affiliation', 'first_name', 'last_name', 'orcid'])
+# corresponding data type is string and should be bool
+brad_authors['corresponding'] = brad_authors['corresponding'].astype(bool)
+
+brad_authors.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_author_positions.csv"])), index = False)
+
+# * Publications: categories
+df_publications_categories = pd.DataFrame()
+for i in range(len(df_publications_details_split)):
+    pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
+    results = dsl.query(f"""search publications
+           where id in {json.dumps(list(pubs))}
+           return publications[id+category_uoa+mesh_terms+category_sdg+category_for_2020+category_rcdc+category_hra+category_hrcs_hc+category_hrcs_rac+category_icrp_cso]
            limit {LIMIT} skip {SKIP}"""
     ).as_dataframe()
     df_publications_categories = pd.concat([df_publications_categories, results])
@@ -174,11 +235,26 @@ df_publications_categories_rcdc = format_categories(df_publications_categories, 
 df_publications_categories_rcdc = df_publications_categories_rcdc.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
 df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_rcdc.csv"])), index = False)
 
+# HRCS HC
+df_publications_categories_hrcs_hc = format_categories(df_publications_categories, 'publication', 'hrcs_hc')
+df_publications_categories_hrcs_hc = df_publications_categories_hrcs_hc.assign(type = df_publications_categories_hrcs_hc['publication_id'].map(dict_output_type))
+df_publications_categories_hrcs_hc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_hc.csv"])), index = False)
+    
+# HRCS RAC
+df_publications_categories_hrcs_rac = format_categories(df_publications_categories, 'publication', 'hrcs_rac')
+df_publications_categories_hrcs_rac = df_publications_categories_hrcs_rac.assign(type = df_publications_categories_hrcs_rac['publication_id'].map(dict_output_type))
+df_publications_categories_hrcs_rac.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_rac.csv"])), index = False)
+
+# ICRP CSO
+df_publications_categories_icrp_cso = format_categories(df_publications_categories, 'publication', 'icrp_cso')
+df_publications_categories_icrp_cso = df_publications_categories_icrp_cso.assign(type = df_publications_categories_icrp_cso['publication_id'].map(dict_output_type))
+df_publications_categories_icrp_cso.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_icrp_cso.csv"])), index = False)
+
 # * Collaborating research organisations 
 print('Collecting data on research organisations')
 res_publications_organisations = pd.DataFrame()
-for i in range(len(df_split)):
-    pubs = df_split[i]['publication_id'].drop_duplicates()
+for i in range(len(df_publications_details_split)):
+    pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
     results = dsl.query(f"""search publications
            where id in {json.dumps(list(pubs))}
            return publications[id+research_orgs]
@@ -206,8 +282,8 @@ df_research_organisations.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "
 # * Citing publications
 print('Collecting data on citing publications')
 df_cit_pubs = pd.DataFrame()
-for i in range(len(df_split)):
-    pubs = df_split[i]['publication_id'].drop_duplicates()
+for i in range(len(df_publications_details_split)):
+    pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
     results = dsl.query_iterative(f"""search publications
            where reference_ids in {json.dumps(list(pubs))}
            return publications[id+doi+year+authors+type+journal_title_raw+research_orgs+category_for_2020+publisher]
@@ -234,173 +310,83 @@ df_cit_pubs_orgs = (
     .rename(columns={'id':'publication_id'})
 )
 
-# Citing authors details
-df_cit_pubs_authors = (
-    df_cit_pubs
-    .explode('authors')
-    .rename(columns={'id':'publication_id'})
-    .filter(['publication_id', 'authors'])
-    .set_index('publication_id')
-)
-df_cit_pubs_authors = pd.json_normalize(df_cit_pubs_authors['authors'])
-df_cit_pubs_authors = (
-    df_cit_pubs_authors
-    .explode('affiliations')
-    .filter(['affiliations', 'first_name', 'last_name', 'researcher_id'])
-    .assign(full_name = lambda df: df.first_name.str.cat(df.last_name, sep = ' '))
-)
-df_cit_pubs_authors_aff = pd.json_normalize(df_cit_pubs_authors['affiliations']).set_index(df_cit_pubs_authors['full_name'])
-df_cit_pubs_authors_aff = (
-    df_cit_pubs_authors_aff
-    .reset_index()
-    .filter(['full_name', 'country', 'name'])
-)
-df_cit_pubs_authors = df_cit_pubs_authors.drop(columns = 'affiliations')
-df_cit_pubs_authors = pd.merge(df_cit_pubs_authors, df_cit_pubs_authors_aff, on = 'full_name')
+# Split up citing publications into smaller chunks for processing
+split = int(np.ceil(df_cit_pubs.shape[0]/2048))
+df_cit_pubs_split = np.array_split(df_cit_pubs, split)
 
-df_cit_pubs_orgs = df_cit_pubs_orgs.filter(['publication_id', 'name', 'types'])
-df_output = pd.merge(df_cit_pubs_authors, df_cit_pubs_orgs, on = 'name')
-df_output = df_output.drop_duplicates()
-df_output.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_citers.csv"])), index = False)
-
-# Citing publications research areas
-df_cit_pubs = df_cit_pubs.rename(columns={'id':'publication_id'})
-df_citations_for_2020 = format_categories(df_cit_pubs, 'publication', 'for_2020')
-df_citations_for_2020[['for_2020_code','for_2020']] = df_citations_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
-df_citations_for_2020.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_for_2020.csv"])), index = False)
-
-# * Grants
-query = """search grants where (researchers in {} and active_year in [{}:{}] and research_orgs = "grid.6268.a")
-           return grants[id+title+active_year+end_date+start_year+research_orgs+funder_org_name+funder_org_countries+funding_gbp+project_numbers+investigators+researchers] 
-           limit {} skip {}"""
-grants = dsl.query(query.format(json.dumps(list(df_researchers['researcher_id'])), MIN_YEAR, MAX_YEAR, LIMIT, SKIP))
-
-if grants.stats['total_count'] == 0:
-    print('There are no grants')
-else:
-    df_grants = grants.as_dataframe()
-
-    # Summary of grants
-    df_grants_summary = (
-        df_grants
-        .rename(columns = {'id' : 'grant_id'})
-        .filter(['grant_id', 'title', 'active_year', 'end_date', 'funder_org_countries', 'funder_org_name', 'funding_gbp', 'start_year', 'project_numbers'])
-    )
-    
-    df_grants_project_numbers = df_grants_summary.explode('project_numbers')
-    df_grants_project_numbers = pd.json_normalize(df_grants_project_numbers['project_numbers']).set_index(df_grants_project_numbers['grant_id'])
-    df_grants_project_numbers = (
-        df_grants_project_numbers
-        .reset_index()
-        .drop(columns = ['label'])
-    )
-    df_funder_org_countries = df_grants_summary.explode('funder_org_countries')
-    df_funder_org_countries = pd.json_normalize(df_funder_org_countries['funder_org_countries']).set_index(df_funder_org_countries['grant_id'])
-    df_funder_org_countries = df_funder_org_countries.reset_index().drop(columns=['id']).rename(columns = {'name' : 'funder_org_countries'})
-    df_grants_summary = df_grants_summary.drop(columns = ['project_numbers', 'funder_org_countries'])
-    df_grants_summary = pd.merge(df_grants_summary, df_grants_project_numbers, on = 'grant_id')
-    df_grants_summary = pd.merge(df_grants_summary, df_funder_org_countries, on = 'grant_id')
-    df_grants_summary.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_details.csv"])), index = False)
-    
-    # Investigators
-    df_grants_investigators = (
-        df_grants
-        .explode('investigators')
-        .filter(['id', 'investigators'])
-        .rename(columns = {'id' : 'grant_id'})
-    )
-    df_grants_investigators = pd.json_normalize(df_grants_investigators['investigators']).set_index(df_grants_investigators['grant_id'])
-    df_grants_investigators = df_grants_investigators.explode('affiliations')
-    df_grants_investigators = (
-        df_grants_investigators
-        .rename(columns={'id': 'researcher_id'})
-        .reset_index()
-    )
-    df_investigators_affiliations = pd.json_normalize(df_grants_investigators['affiliations']).set_index(df_grants_investigators['researcher_id'])
-    df_investigators_affiliations = (
-        df_investigators_affiliations
-        .reset_index()
-        .filter(['researcher_id', 'name'])
-    )
-    df_grants_investigators = df_grants_investigators.drop(columns=['affiliations'])
-    df_grants_investigators = pd.merge(df_grants_investigators, df_investigators_affiliations, on = 'researcher_id')
-    df_grants_investigators = (
-        df_grants_investigators
-        .drop_duplicates()
-        .drop(columns=['middle_name'])
-        .assign(full_name = lambda df: df[['first_name', 'last_name']].apply(' '.join, axis = 1))
-    )
-    df_grants_investigators.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_investigators.csv"])), index = False)
-    
-    # Organisations
-    df_grants_orgs = (
-        df_grants
-        .explode('research_orgs')
-        .filter(['id', 'research_orgs'])
-        .rename(columns = {'id' : 'grant_id'})
-    )
-    df_grants_orgs = pd.json_normalize(df_grants_orgs['research_orgs']).set_index(df_grants_orgs['grant_id'])
-    df_grants_orgs = (
-        df_grants_orgs
+df_output = pd.DataFrame()
+for i in range(len(df_cit_pubs_split)):
+        
+    # Citing organisations details
+    df_cit_pubs_orgs = df_cit_pubs.explode('research_orgs')
+    df_cit_pubs_orgs = pd.json_normalize(df_cit_pubs_orgs['research_orgs']).set_index(df_cit_pubs_orgs['id'])
+    df_cit_pubs_orgs = (
+        df_cit_pubs_orgs
         .explode('types')
+        .filter(['country_name', 'name', 'types'])
         .reset_index()
-        .filter(['grant_id', 'country_name', 'name', 'types'])
+        .rename(columns={'id':'publication_id', 'country_name':'country'})
     )
-    df_grants_orgs.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_organisations.csv"])), index = False)
+       
+    df_output = pd.concat([df_output, df_cit_pubs_orgs])
     
-    # Researchers
-    df_grants_researchers = (
-        df_grants
-        .explode('researchers')
-        .filter(['id', 'researchers'])
-        .rename(columns = {'id' : 'grant_id'})
-    )
-    df_grants_researchers = pd.json_normalize(df_grants_researchers['researchers']).set_index(df_grants_researchers['grant_id'])
-    df_grants_researchers = (
-        df_grants_researchers
-        .drop(columns=['orcid_id'])
-        .reset_index()
-        .rename(columns={'id' : 'researcher_id'})
-        .explode('research_orgs')
-        .pipe(lambda df: df[df['research_orgs'] == 'grid.6268.a'])
-    )
-    df_grants_researchers.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_researchers.csv"])), index = False)
-    
-    # Categories
-    df_grants_categories = dsl.query_iterative(f"""
-                     search grants
-                        where id in {json.dumps(list(df_grants_summary['grant_id']))}
-                        return grants[id+category_uoa+category_hra+category_hrcs_hc+category_hrcs_rac+category_icrp_cso+category_sdg+category_for_2020+category_rcdc]
-    """).as_dataframe().rename(columns={'id': 'grant_id'})
+df_citing_countries = (
+    df_output
+    .groupby('country')
+    .nunique('publication_id')
+    .reset_index()
+)
+df_citing_countries.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_countries.csv"])), index = False)
 
-    # Units of assessment
-    df_grants_categories_uoa = format_categories(df_grants_categories, 'grant', 'uoa')
-    df_grants_categories_uoa.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_uoa.csv"])), index = False)
-    
-    # FoR 2020
-    df_grants_categories_for_2020 = format_categories(df_grants_categories, 'grant', 'for_2020')
-    df_grants_categories_for_2020[['for_2020_code','for_2020']] = df_grants_categories_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
-    df_grants_categories_for_2020.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_for_2020.csv"])), index = False)
-    
-    # RCDC
-    df_grants_categories_rcdc = format_categories(df_grants_categories, 'grant', 'rcdc')
-    df_grants_categories_rcdc.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_rcdc.csv"])), index = False)
-    
-    # SDG
-    df_grants_categories_sdg = format_categories(df_grants_categories, 'grant', 'sdg')
-    df_grants_categories_sdg[['sdg_code','sdg']] = df_grants_categories_sdg['sdg'].str.split(pat=' ', n=1, expand=True)
-    df_grants_categories_sdg.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_sdg.csv"])), index = False)
-    
-    # HRA
-    df_grants_categories_hra = format_categories(df_grants_categories, 'grant', 'hra')
-    df_grants_categories_hra.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hra.csv"])), index = False)
-    
-    # HRCS HC
-    df_grants_categories_hrcs_hc = format_categories(df_grants_categories, 'grant', 'hrcs_hc')
-    df_grants_categories_hrcs_hc.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hrcs_hc.csv"])), index = False)
-    
-    # HRCS RAC
-    df_grants_categories_hrcs_rac = format_categories(df_grants_categories, 'grant', 'hrcs_rac')
-    df_grants_categories_hrcs_rac.to_csv(os.path.join(GRANTS_DIR, "".join([PROJECT_NAME, "_grants_categories_hrcs_rac.csv"])), index = False)
+df_citing_orgs = (
+     df_output
+    .groupby('name')
+    .nunique('publication_id')
+    .reset_index()
+)
+df_citing_orgs.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_organisations.csv"])), index = False)
+
+df_citing_orgs_types = (
+    df_output
+    .groupby('types')
+    .nunique('publication_id')
+    .reset_index()
+)
+df_citing_orgs_types.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_org_types.csv"])), index = False)
+
+# # Citing authors details
+# df_cit_pubs_authors = (
+#     df_cit_pubs
+#     .explode('authors')
+#     .rename(columns={'id':'publication_id'})
+#     .filter(['publication_id', 'authors'])
+#     .set_index('publication_id')
+# )
+# df_cit_pubs_authors = pd.json_normalize(df_cit_pubs_authors['authors'])
+# df_cit_pubs_authors = (
+#     df_cit_pubs_authors
+#     .explode('affiliations')
+#     .filter(['affiliations', 'first_name', 'last_name', 'researcher_id'])
+#     .assign(full_name = lambda df: df.first_name.str.cat(df.last_name, sep = ' '))
+# )
+# df_cit_pubs_authors_aff = pd.json_normalize(df_cit_pubs_authors['affiliations']).set_index(df_cit_pubs_authors['full_name'])
+# df_cit_pubs_authors_aff = (
+#     df_cit_pubs_authors_aff
+#     .reset_index()
+#     .filter(['full_name', 'country', 'name'])
+# )
+# df_cit_pubs_authors = df_cit_pubs_authors.drop(columns = 'affiliations')
+# df_cit_pubs_authors = pd.merge(df_cit_pubs_authors, df_cit_pubs_authors_aff, on = 'full_name')
+
+# df_cit_pubs_orgs = df_cit_pubs_orgs.filter(['publication_id', 'name', 'types'])
+# df_output = pd.merge(df_cit_pubs_authors, df_cit_pubs_orgs, on = 'name')
+# df_output = df_output.drop_duplicates()
+# df_output.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_citers.csv"])), index = False)
+
+# # Citing publications research areas
+# df_cit_pubs = df_cit_pubs.rename(columns={'id':'publication_id'})
+# df_citations_for_2020 = format_categories(df_cit_pubs, 'publication', 'for_2020')
+# df_citations_for_2020[['for_2020_code','for_2020']] = df_citations_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
+# df_citations_for_2020.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_for_2020.csv"])), index = False)
 
 print('Data collection completed.')

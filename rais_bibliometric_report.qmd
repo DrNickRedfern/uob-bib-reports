@@ -1,0 +1,1532 @@
+---
+params:
+  data_date: !expr blogdown::read_toml('bibliometric_report_params.toml')$project$date
+  project_name: !expr blogdown::read_toml('bibliometric_report_params.toml')$project$name
+  research_unit: !expr blogdown::read_toml('bibliometric_report_params.toml')$unit$research_unit
+  min_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$minimum
+  max_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$maximum
+  palette: !expr blogdown::read_toml('bibliometric_report_params.toml')$look$palette
+title: "`r params$research_unit`"
+subtitle: |
+    | `r glue::glue("Bibliometric report: {params$min_year} - {params$max_year}")`
+author: "Research and Innovation Services"
+date: today
+date-format: "DD MMMM YYYY"
+abstract-title: "Version"
+abstract: "`r paste0('1.0.0-', format(Sys.time(), '%Y%m%d%H%M'))`"
+execute: 
+  echo: false
+  warning: false
+format:
+  html:
+    embed-resources: true
+    title-block-banner: true
+    toc: true
+    toc-location: left
+    theme:
+      light: flatly
+      dark: darkly
+    reference-location: margin
+include-before-body: 
+  text: |
+    <script src="https://kit.fontawesome.com/faa20ddbe4.js" crossorigin="anonymous"></script>
+css: custom.css
+---
+
+```{r}
+#| label: setup-load-packages
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(farver, fontawesome, glue, GGally, ggpubr, ggrepel, knitr, kableExtra, here, janitor, network, plotly, scales, sna, tidyquant, tidyverse)
+
+options(scipen = 99999)
+```
+
+```{r}
+#| label: setup-reload-params
+
+# This is required to pass params as values to external functions for plotting
+min_year <- params$min_year
+max_year <- params$max_year
+```
+
+```{r}
+#| label: setup-load-data
+
+faculty <- read_csv(here("data", "faculty.csv"), show_col_types = FALSE) %>%
+  mutate(full_name = paste0(first_name, " ", family_name) %>%
+           str_to_title()) %>%
+  filter(level_2_long_desc == params$research_unit)
+
+faculty_name_ref <- faculty %>%
+  distinct(unique_id, full_name, level_3_long_desc)
+
+researchers <- read_csv(here("data", glue("{params$project_name}_researchers.csv")), 
+                        show_col_types = FALSE) %>%
+  mutate(unique_id = VLOOKUP(researcher_id, faculty, researcher_id, unique_id))
+
+df_publications <- read_csv(here("data", glue("{params$project_name}_publications_details.csv")), 
+                            show_col_types = FALSE) %>%
+  filter(type != "preprint") %>%
+  mutate(current_affiliation = VLOOKUP(researcher_id, researchers, researcher_id, current_research_org.name),
+         unique_id = VLOOKUP(researcher_id, faculty, researcher_id, unique_id),
+         full_name = VLOOKUP(unique_id, faculty_name_ref, unique_id, full_name),
+         school = VLOOKUP(unique_id, faculty_name_ref, unique_id, level_3_long_desc))
+```
+
+```{r}
+#| label: setup-source-functions
+source(here("source_files", "bibliometric_report_functions_general.R"))
+source(here("source_files", "bibliometric_report_functions_researchers.R"))
+source(here("source_files", "bibliometric_report_functions_outputs.R"))
+source(here("source_files", "bibliometric_report_functions_impact.R"))
+source(here("source_files", "bibliometric_report_functions_collaboration.R"))
+source(here("source_files", "bibliometric_report_functions_altmetrics.R"))
+```
+
+```{r}
+#| label: setup-set-palettes
+discrete_pal <- RColorBrewer::brewer.pal(n = 9, params$palette)
+continuous_pal <- colorRampPalette(discrete_pal)
+```
+
+```{r}
+#| label: setup-source-theme
+source(here("source_files", "my_theme.R"))
+```
+
+```{r}
+#| label: setup-interactive
+
+is_interactive <- emo::ji("point_up")
+```
+
+```{r}
+# TODO Move universal parameters to code blocks at the head
+```
+
+# About this report
+
+:::{.column-margin}
+#### Dark mode {.unnumbered .unlisted}
+For reading comfort, this report can be toggled between light and dark modes by clicking on the switch (<i class="fa fa-toggle-off"></i>) in the top right corner of the banner (above the University of Bradford logo).
+:::
+
+This report presents a summary-level bibliometric analysis of outputs produced by researchers in `r params$research_unit` that were published from `r params$min_year` to `r params$max_year`, and includes basic bibliometric information, citation data and impact metrics, open access data, collaboration data, and Altmetrics.
+
+:::{.callout-important}
+This report presents quantitative analyses of bibliometric data that can be used to evaluate research units. However, the limitations of bibliometric analysis mean that bibliometrics should never be used as the sole criteria for any evaluation purposes. Quantitative indicators should always be used to supplement qualitative peer assessment of research quality and impact. Research should always be assessed on its own merits against the strategic goals set out in the University of Bradford’s [research and innovation strategy](https://www.bradford.ac.uk/about/strategy-vision/university-strategy/research-innovation/) and the objectives of the researchers and the university’s external research partners.
+:::
+
+<br>
+
+::: columns
+::: {.column width="47%"}
+![](images/Dorabadge1_white_background.png)
+:::
+::: {.column width="3%"}
+:::
+::: {.column width="50%"}
+The University of Bradford is a signatory of the [San Francisco Declaration on Research Assessment](https://sfdora.org/read/) and is committed to the responsible use of research metrics.
+<br>
+<br>
+Read the University's statement on responsible research metrics [here](https://www.bradford.ac.uk/research/strategy-quality/metrics/).
+:::
+:::
+
+## Data
+The bibliometric analysis is based on data obtained from the [Dimensions](https://app.dimensions.ai) database. The data was exported from Dimensions on `r params$data_date`.
+
+The result set includes all research outputs from `r params$research_unit` *published* from `r params$min_year` to `r params$max_year`. Please note that this does *not* include preprints.
+
+### Search method
+
+The search method used in this report is based on the staff list provided by the University of Bradford. Staff are associated with their researcher id in Dimensions, with researchers with multiple Dimensions researcher ids grouped together under the id with the greatest academic age. The data for the publications of each identified researcher is then collected.
+
+## Interactivity
+Interactive charts in this report are identified by `r emo::ji("point_up")`. Hover the mouse to see more detail or click on categories in the legend to isolate a data segment. Interactive plots can also be downloaded as .png files by clicking on the &#128247; icon.
+
+## Developing bibliometric reporting
+If you have questions about this report or would like to suggest new features for future reports on this topic, please contact the research metrics officer at [research.metrics@brad.ac.uk](mailto:research.metrics@brad.ac.uk).
+
+# Researchers
+
+This section presents on overview of the researchers in `r params$research_unit` included in the result set. Only researchers with a disambiguated Dimensions researcher id are included. Researchers in the result set with multiple Dimensions researcher ids have been aggregated under the id associated with the greatest academic age.
+
+```{r}
+#| label: researchers-data-load
+researchers_result <- researchers_summary(researchers)
+
+n_researchers_in_results <- researchers_result$n_researchers_in_results[1]
+n_currently_affiliated_researchers <- researchers_result$n_currently_affiliated_researchers[1]
+n_researchers_without_orcid <- researchers_result$n_researchers_without_orcid[1]
+n_researchers_with_orcid <- researchers_result$n_researchers_with_orcid[1]
+p_researchers_with_orcid <- researchers_result$p_researchers_with_orcid[1]
+n_researchers_with_outputs <- n_distinct(df_publications$full_name)
+```
+
+:::{.callout-note title="Key performance indicators"}
+- Researchers with disambiguated Dimensions IDs: `r n_researchers_in_results`
+- Currently affiliated researchers: `r n_currently_affiliated_researchers`[Currently affiliated researchers are defined as researchers whose researcher id in Dimensions is matched to the University of Bradford's organisation id at the time the result set was generated.]{.aside}
+- Researchers with at least one output: `r n_researchers_with_outputs`
+- Researchers with an ORCID: `r p_researchers_with_orcid`%
+:::
+
+## Researchers with outputs published `r params$min_year` to `r params$max_year`
+
+From `r params$min_year` to `r params$max_year`, `r n_researchers_with_outputs` researchers in the `r params$research_unit` published at least one research output. @tbl-researchers-outputs presents the number of outputs for each researcher by year.
+
+:::{.callout-warning}
+The list of contributing authors in @tbl-researchers-outputs reflects only those researchers who are present in the Dimensions result set. Other members of staff in the `r params$research_unit` may be actively engaged in research and knowledge exchange activities that are not recorded by Dimensions and their absence from @tbl-researchers-outputs should not necessarily be interpreted as a lack of research activity.
+:::
+
+```{r}
+#| label: researchers-outputs
+df_researcher_outputs <- researchers_outputs(df_publications, faculty_name_ref)
+```
+
+```{r}
+#| label: tbl-researchers-outputs
+#| tbl-cap: !expr glue("Annual number of outputs for researchers in the {params$research_unit}.</br>Publications with multiple authors from the University of Bradford are counted once for each author.")
+#| cap-location: top
+#| column: page-inset-right
+
+knitr::kable(df_researcher_outputs, 
+             align = c("l", rep("c", dim(df_researcher_outputs)[2])), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "25em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px;")
+```
+
+:::{.callout-caution}
+The number of outputs of a researcher is affected by contract type, teaching workload, career stage, gender, personal interests, and other factors. None of these factors are captured by reporting the number of outputs produced by a researcher and the data should be interpreted with care to avoid bias.
+:::
+
+## Academic age
+
+```{r}
+#| label: researchers-academic-age
+# researchers <- researchers %>%
+#   mutate(age_bin = cut(academic_age, breaks = c(0, 1, seq(5, 50, 5))),
+#          total_publications = VLOOKUP(full_name, df_researcher_outputs, Researcher, Total))
+
+researchers_ages <- researchers %>%
+  group_by(unique_id) %>%
+  mutate(academic_age = max(academic_age)) %>%
+  ungroup() %>%
+  mutate(age_bin = cut(academic_age, breaks = c(0, 1, seq(5, 50, 5))),
+         full_name = VLOOKUP(unique_id, faculty_name_ref, unique_id, full_name),
+         total_publications = VLOOKUP(full_name, df_researcher_outputs, Researcher, Total)) %>%
+  distinct(full_name, unique_id, academic_age, age_bin, total_publications)
+
+academic_age_result <- academic_age_summary(researchers_ages)
+
+mean_academic_age <- academic_age_result$mean_academic_age[1]
+median_academic_age <- academic_age_result$median_academic_age[1]
+p_younger_than_eleven <- academic_age_result$p_younger_than_eleven[1]
+academic_age <- academic_age_result$academic_age
+```
+
+For researchers in `r params$research_unit` who have published at least one output since `r params$min_year`, the mean academic age is **`r mean_academic_age` years**, the median academic age is **`r median_academic_age` years**, and **`r p_younger_than_eleven`%** have an academic age less than or equal to ten years. @fig-academic-age plots the distribution of the academic ages of researchers who published at least one output published between `r params$min_year` and `r params$max_year`.
+
+::: {.column-margin}
+A researcher's academic age is defined as *the number of years elapsed since the year of publication of their first output*.
+:::
+
+```{r}
+#| label: fig-academic-age
+#| fig-align: center
+#| fig-cap: !expr glue("Academic age distribution of researchers in the {params$research_unit} who published at least one research output published between {params$min_year} and {params$max_year}.")
+academic_age_plot(academic_age, discrete_pal, text_size = 5)
+```
+
+## Research outputs per school
+
+@tbl-school-outputs breaks down the number of outputs by Level 3 affiliations based on staff data provided by Human Resources. Where a researcher has no Level 3 affiliation assigned they have been classed as `Not assigned`.
+
+```{r}
+#| label: tbl-school-outputs
+#| tbl-cap: !expr glue("Number of outputs produced by researchers in the {params$research_unit} between {params$min_year} and {params$max_year} by Level 3 affiliation. Publications with authors from multiple schools will be counted once for each school.")
+#| tbl-cap-location: top
+
+level_3_outputs <- df_publications %>%
+  group_by(school, year) %>%
+  summarise(n = n_distinct(publication_id)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = "year", values_from = "n") %>%
+  adorn_totals(., where = "col") %>%
+  replace(is.na(.), "Not assigned") %>%
+  rename(School = school)
+
+knitr::kable(level_3_outputs, align = c("l", rep("c", dim(level_3_outputs)[2]-1)), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+
+## Internal Collaborations
+
+```{r}
+#| label: internal-network-data
+
+source(here("source_files", "internal_network.R"))
+
+edge_data <- read_csv(here("data", glue("{params$project_name}_edges.csv")), 
+                         show_col_types = FALSE)
+
+staff_list <- read_csv(here("data", "faculty.csv"), show_col_types = FALSE) %>%
+  select(level_2_long_desc, researcher_id, family_name, first_name, unique_id) %>%
+  rename(researcher_id_x = researcher_id,
+         faculty = level_2_long_desc) %>%
+  mutate(full_name = paste0(first_name, " ", family_name) %>%
+           str_to_title(.))
+
+target_faculty <- params$research_unit
+
+network_data <- pre_format_network_data(edge_data, staff_list, target_faculty)
+```
+
+The internal collaborations of researchers in the `r params$research_unit` within the University of Bradford are analysed based on the co-authorship of research outputs. @tbl-internal-network breaks down the number of internal collaborations by researchers in the `r params$research_unit` for outputs published from `r params$min_year` to `r params$max_year`.
+
+```{r}
+#| label: tbl-internal-network
+#| tbl-cap: !expr glue("Internal collaborations for researchers in the {params$research_unit}.</br>Publications are counted once for each pair of researchers to give an overall analysis of the scale and scope of internal collaborations.")
+#| cap-location: top
+#| column: page-inset-right
+
+collab_summary <- internal_collab_summary(network_data)
+
+knitr::kable(collab_summary, align = c("l", rep("c", dim(collab_summary)[2]-1)), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  # kableExtra::add_header_above(c(" " = 4, "Collaborations" = 4, " " = 1),
+  #                              background = "white", color = "#303030",
+  #                              extra_css = "<table style='width: 100\\%'><colgroup><col span='1' style='width: 16\\%;'><col span='2' style='width: 16\\%;'><col span='3' style='width: 16\\%;'><col span='4' style='width: 16\\%;'><col span='5' style='width: 5\\%;'><col span='6' style='width: 5\\%;'><col span='7' style='width: 5\\%;'><col span='8' style='width: 5\\%;'><col span='9' style='width: 16\\%;'>") #%>%
+  kableExtra::column_spec(1, width = "20em") %>%
+  kableExtra::column_spec(5:8, width = "5em")
+```
+
+@fig-internal-network maps the collaboration networks of researchers in the `r params$research_unit` within the University of Bradford based on co-authorship of research outputs.
+
+```{r}
+#| label: fig-internal-network
+#| fig-cap: !expr glue("Internal collaboration network for researchers in the {params$research_unit} based on co-authorship of research outputs published between {params$min_year} and {params$max_year}. {is_interactive}")
+#| fig-height: 9
+#| column: page-inset-right
+
+df_final <- format_matrix(network_data)
+network_plotting_data <- format_network(network_data, df_final)
+network_plot <- internal_network_plot(network_plotting_data)
+ggplotly(network_plot, tooltip = "text") %>%
+  layout(legend = list(orientation = "h", x = 0.1))
+```
+
+# Outputs
+
+This section presents a descriptive overview of the research outputs of the `r params$research_unit` published from `r params$min_year` to `r params$max_year`.
+
+```{r}
+#| label: outputs-data
+publications_results <- publications_summary(df_publications)
+
+n_unique_outputs <- publications_results$n_unique_outputs[1]
+n_outputs_currently_affiliated <- publications_results$n_outputs_currently_affiliated[1]
+df_outputs_by_type <- publications_results$df_outputs_by_type
+df_output_volume <- publications_results$df_output_volume
+df_output_growth <- publications_results$df_output_growth
+p_increase_outputs <- publications_results$p_increase_outputs[1]
+```
+
+```{r}
+#| label: outputs-data-oa
+open_access_results <- open_access_summary(df_publications)
+
+open_access_data <- open_access_results$open_access_data
+open_access_count <- open_access_results$open_access_count
+p_open_access <- open_access_results$p_open_access
+p_closed_open_access <- open_access_results$p_closed_open_access
+p_gold_open_access <- open_access_results$p_gold_open_access
+```
+
+```{r}
+#| label: outputs-data-corresponding
+
+df_author_positions <- read_csv(here("data", 
+                                     glue("{params$project_name}_author_positions.csv")),
+                                show_col_types = FALSE) %>%
+  mutate(unique_id = VLOOKUP(researcher_id, researchers, researcher_id, unique_id)) %>%
+  filter(!is.na(unique_id))
+
+author_positions_results <- author_positions_summary(df_author_positions, df_publications)
+author_position_totals <- author_positions_results %>% slice(n())
+
+n_total_corresponding <- author_position_totals %>% 
+  select(total_corresponding) %>% unname() %>% unlist()
+p_total_corresponding <- author_position_totals %>% 
+  select(p_corresponding) %>% unname() %>% unlist()
+n_first_author <- author_position_totals %>% 
+  select(first_author) %>% unname() %>% unlist()
+p_first_author <- author_position_totals %>% 
+  select(p_first) %>% unname() %>% unlist()
+n_last_author <- author_position_totals %>% 
+  select(last_author) %>% unname() %>% unlist()
+p_last_author <- author_position_totals %>% 
+  select(p_last) %>% unname() %>% unlist()
+```
+
+```{r}
+#| label: data-corresponding-oa
+
+corresponding_oa <- corresponding_oa_status(df_author_positions)
+
+corresponding_oa$open_access <- factor(corresponding_oa$open_access,
+                                       levels = c("Bronze",
+                                                  "Gold",
+                                                  "Green",
+                                                  "Hybrid",
+                                                  "Closed"))
+
+corresponding_oa_props <- corresponding_oa_proportions(corresponding_oa)
+corresponding_oa_props_totals <- corresponding_oa_props %>% slice(n())
+
+n_total_corresponding_oa <- corresponding_oa_props_totals %>%
+  select(`Open access`) %>% unname() %>% unlist()
+p_total_corresponding_oa <- corresponding_oa_props_totals %>%
+  select(Percent) %>% unname() %>% unlist()
+```
+
+:::{.callout-note title="Key performance indicators"}
+- Total research outputs: `r n_unique_outputs`[In this report, *open access* refers to journal articles only. 
+From 1 January 2024, [UKRI's open access requirements](https://www.ukri.org/publications/ukri-open-access-policy/) will be extended to monographs, book chapters, and edited collections published on or after this date. The definition and metrics for open access research will be updated in future reports once this change is implemented.]{.aside}
+- Outputs by currently affiliated researchers: `r n_outputs_currently_affiliated`
+- Relative change in outputs, `r min_year`-`r max_year`: `r round(p_increase_outputs, 0)`%
+- Journal articles with a University of Bradford corresponding author: `r n_total_corresponding` (`r p_total_corresponding`%)
+- Journal articles with a University of Bradford first author: `r n_first_author` (`r p_first_author`%)
+- Journal articles with a University of Bradford last author: `r n_last_author` (`r p_last_author`%)
+- Open access journal articles: `r round(p_open_access, 0)`%
+- Open access journal articles with a corresponding author from the `r params$research_unit`: `r n_total_corresponding_oa` (`r p_total_corresponding_oa`% of articles with a University of Bradford corresponding author)
+:::
+
+## Overview
+
+@fig-outputs-total plots the annual total number of publications produced by researchers in the `r params$research_unit` between `r params$min_year` and `r params$max_year`. @fig-outputs-growth plots the cumulative growth in the total number of outputs over the time period covered by this report and @fig-outputs-change plots the annual percentage change in the total number of outputs.
+
+:::{.panel-tabset}
+
+## Total publications
+
+```{r}
+#| label: fig-outputs-total
+#| fig-cap: !expr glue("Cumulative growth in research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+
+chart_total_pubs(df_output_growth, discrete_pal, min_year, max_year)
+```
+
+## Cumulative growth
+
+```{r}
+#| label: fig-outputs-growth
+#| fig-cap: !expr glue("Cumulative growth in research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+
+ggplotly(chart_cumulative_growth(df_output_growth, discrete_pal, min_year, max_year), 
+         tooltip = "text")
+```
+
+## Annual change
+
+```{r}
+#| label: fig-outputs-change
+#| fig-cap: !expr glue("Annual percentage change in research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+
+ggplotly(chart_percentage_change(df_output_growth, discrete_pal, min_year, max_year), 
+         tooltip = "text")
+```
+
+:::
+
+@fig-outputs-volume plots the outputs by all researchers in @tbl-researchers-outputs by output type and @fig-outputs-affil plots the total number of outputs published each year by researchers currently affiliated to the University of Bradford. There are `r n_outputs_currently_affiliated` outputs by researchers currently affiliated to the university.
+
+:::{.panel-tabset}
+
+## Research outputs by type
+
+```{r}
+#| label: fig-outputs-volume
+#| fig-cap: !expr glue("Research outputs by type produced by the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+
+ggplotly(chart_output_volume(df_output_volume, discrete_pal, min_year, max_year),
+         tooltip = "text")
+```
+
+## Currently affiliated researchers
+
+```{r}
+#| label: fig-outputs-affil
+#| fig-cap: !expr glue("Volume of research outputs produced by currently affiliated researchers in the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+
+ggplotly(chart_output_affiliated(df_publications, discrete_pal, min_year, max_year),
+         tooltip = "text")
+```
+
+:::
+
+Researchers from the `r params$research_unit` are listed as the corresponding author on `r n_total_corresponding` journal articles, accounting for `r p_total_corresponding`% of all journal articles[Other types of research outputs typically do not identify a corresponding author.]{.aside}. @tbl-outputs-authors breaks down author roles by year.
+
+```{r}
+#| label: tbl-outputs-authors
+#| tbl-cap: !expr glue("Number of journal with a corresponding author from the {params$research_unit}, {params$min_year} - {params$max_year}.")
+#| tbl-cap-location: top
+
+author_positions_results_formatted <- author_positions_results %>%
+  mutate(first_author = paste0(first_author, " (", p_first, "%)"),
+         last_author = paste0(last_author, " (", p_last, "%)"),
+         total_corresponding = paste0(total_corresponding, " (", p_corresponding, "%)")) %>%
+  rename(Year = year,
+         `Journal articles` = total,
+         `First authorship` = first_author,
+         `Last authorship` = last_author,
+         `Corresponding authorship` = total_corresponding) %>%
+  select(-c(p_first, p_last, p_corresponding))
+
+knitr::kable(author_positions_results_formatted, align = c("ccccc"),
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+## Open Access
+
+@fig-oa-total shows that `r p_open_access`% of articles produced by the `r params$research_unit` are open access.
+
+:::{.column-margin}
+Dimensions distinguishes between four different categories of open access, with one category for outputs that are not open access:
+</br>
+</br>
+
+- **Gold**: an output is published in a fully open access journal.
+- **Green**: an output is freely available in an OA repository (such as a discipline specific or institutional repository).
+- **Bronze**: an output is freely available on publisher's website, but without an open access licence.
+- **Hybrid**: an output is freely available under an open licence in a paid-access journal.
+- **Closed**: an output is not available under any of the above open access categories.
+
+The categories gold, bronze, hybrid, and closed are mutually exclusive. Green open access may overlap with other categories, and is assigned to an output when the best OA location is identified as a repository.
+:::
+
+```{r}
+#| label: fig-oa-total
+#| fig-cap: !expr glue("Percentage of journal articles by type of open access for the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+open_access_donut(open_access_count, discrete_pal)
+```
+
+@fig-oa-trend presents a breakdown of journal articles by their OA type (i.e., bronze, gold, green, hybrid, or closed) over time. @fig-oa-trend-corresponding shows the results when limiting the result set to those articles where the correspondence author is from the `r params$research_unit`. @tbl-oa-proportions shows the proportion of journal articles with a University of Bradford corresponding author that are open access broken by year.
+
+```{r}
+#| label: tbl-oa-proportions
+#| tbl-cap: !expr glue("The proportion of journal articles with a corresponding author from the {params$research_unit} published between {params$min_year} to {params$max_year} that are open acess.")
+#| tbl-cap-location: top
+
+knitr::kable(corresponding_oa_props, align = c("lccc"), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+:::{.panel-tabset}
+
+## All outputs
+
+```{r}
+#| label: fig-oa-trend
+#| fig-cap: !expr glue("Breakdown of open access status over time for research ouputs produced by the {params$research_unit} {min_year}-{max_year}. The total number of publications in each year is also shown. {is_interactive}")
+
+oa_trend_plot <- open_access_trend(open_access_data, discrete_pal)
+
+ggplotly(oa_trend_plot, tooltip = "text") %>%
+  layout(legend = list(orientation = "h", x = 0.1))
+```
+
+## UoB corresponding author
+
+```{r}
+#| label: fig-oa-trend-corresponding
+#| fig-cap: !expr glue("Breakdown of research outputs by open access status where the corresponding author is affiliated to the University of Bradford, {min_year}-{max_year}. The total number of publications in each year is also shown. {is_interactive}")
+
+oa_trend_plot_corresponding <- open_access_trend_corresponding(corresponding_oa,
+                                                               discrete_pal)
+
+ggplotly(oa_trend_plot_corresponding, tooltip = "text") %>%
+  layout(legend = list(orientation = "h", x = 0.1))
+```
+
+:::
+
+## Where was research published?
+
+```{r}
+#| label: data-journals
+where_published_results <- where_published_summary(df_publications, discrete_pal)
+
+n_journals <- where_published_results$n_journals[1]
+```
+
+Researchers in the `r params$research_unit` published journal articles in `r n_journals` journals. @tbl-journals breaks down the number of journal articles by researchers in the `r params$research_unit` by venue of publication. @tbl-publishers breaks down journal articles by publisher.
+
+:::{.panel-tabset}
+
+## Journals
+
+```{r}
+#| label:  tbl-journals
+#| tbl-cap: !expr glue("Number of outputs by venue of publication for journal articles produced by researchers from</br>the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+
+df_journals_count <- where_published_results$df_journals_count
+
+knitr::kable(df_journals_count, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "10em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+## Publishers
+
+```{r}
+#| label:  tbl-publishers
+#| tbl-cap: !expr glue("Number of journal articles produced by researchers in the {params$research_unit}, {params$min_year} - {params$max_year}, by publisher.")
+#| cap-location: top
+#| column: page-inset-right
+
+df_publishers_count <- where_published_results$df_publishers_count
+
+knitr::kable(df_publishers_count, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "10em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+:::
+
+## Research areas
+
+Dimensions has a series of in-built categorisation systems which are used by funders and researchers around the world. Dimensions allocates a range of identifiers to research outputs using [machine learning based on peer review](https://plus.dimensions.ai/support/solutions/articles/23000018820-which-research-categories-and-classification-schemes-are-available-in-dimensions-) to identify the research areas to which those outputs belong.
+
+### Fields of Research (ANZSRC2020)
+
+The [Australian and New Zealand Standard Research Classification 2020](https://www.abs.gov.au/statistics/classifications/australian-and-new-zealand-standard-research-classification-anzsrc/latest-release) for fields of research (FoR 2020) is a hierarchical system of classifying areas of research, with major fields of research divided into minor fields. Fields are placed into categories with which they share a common methodology. 
+
+The allocation of a research output to multiple FoRs is a low-level indicator of multi- or interdisciplinary research. Dimensions allocates research to FoRs at two levels: 1st Level FoRs that share a broad methodology, knowledge, and/or perspective with other research outputs; and 2nd Level FoRs that divide the 1st Level FoRs into sub-disciplines.
+
+```{r}
+#| label: data-for2020
+df_for_2020 <- read_csv(here("data",  glue("{params$project_name}_publications_for_2020.csv")), 
+                        show_col_types = FALSE) %>%
+  filter(type != "preprint") %>%
+  mutate(level = ifelse(nchar(for_2020_code) == 2, "level_1", "level_2"))
+
+for_2020_summary_results <- for_2020_summary(df_for_2020)
+
+outputs_with_no_for <- for_2020_summary_results$outputs_with_no_for
+n_unique_for <- for_2020_summary_results$n_unique_for
+for_level_1_summary <- for_2020_summary_results$for_level_1_summary
+for_2020_level_1_per_publication <- for_2020_summary_results$for_2020_level_1_per_publication
+n_outputs_with_single_level_1_for <- for_2020_summary_results$n_outputs_with_single_level_1_for
+p_outputs_with_single_level_1_for <- for_2020_summary_results$p_outputs_with_single_level_1_for
+n_outputs_with_multi_level_1_for <- for_2020_summary_results$n_outputs_with_multi_level_1_for
+p_outputs_with_multi_level_1_for <- for_2020_summary_results$p_outputs_with_multi_level_1_for
+
+source(here("source_files", "numbers2words.R"))
+no_for_text <- ifelse(outputs_with_no_for == 1,
+                      glue("is {numbers2words(outputs_with_no_for)} research output that has"),
+                      glue("are {numbers2words(outputs_with_no_for)} research outputs that have"))
+```
+
+Of the research outputs in the result set, **`r n_outputs_with_single_level_1_for` (`r p_outputs_with_single_level_1_for`%)** been allocated a single 1st Level Field of Research and **`r n_outputs_with_multi_level_1_for` (`r p_outputs_with_multi_level_1_for`%)** been allocated to multiple 1st Level FoRs. There `r no_for_text` not been allocated a 1st Level FoR category. 
+
+A total of `r n_unique_for` 1st Level Fields of Research are allocated to research outputs from the `r params$research_unit`. @tbl-for shows the frequency with which different 1st Level FoRs occur.
+
+```{r}
+#| label:  tbl-for
+#| tbl-cap: !expr glue("Number of outputs for the {params$research_unit} allocated to 1st Level Fields of Research (ANZSRC2020). An output may be assigned to more than one FoR.")
+#| cap-location: top
+
+knitr::kable(for_level_1_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+The [treemap](https://en.wikipedia.org/wiki/Treemapping) in @fig-for-treemap shows how research outputs are allocated to sub-disciplines (level 2 FoRs) within their 1st level FoR categorisation.
+
+```{r}
+#| label: fig-for-treemap
+#| fig-cap: !expr glue("Hierarchical representation of outputs allocated to 1st and 2nd Level Fields of Research (ANZSRC2020). An output may be assigned to more than one subdiscipline within its level 1 FoR grouping. Outputs without a level 1 FoR assigned have been excluded from the data set.")
+#| column: page-inset-right
+#| fig-width: 10
+#| fig-height: 7
+
+for_2020_treemap(df_for_2020, palette = discrete_pal)
+```
+
+@fig-for-network plots the interrelationships between level 1 FoR categories for outputs produced by the `r params$research_unit` from `r params$min_year` to `r params$max_year`.
+
+```{r}
+#| label: fig-for-network
+#| fig-cap: !expr glue("Connections between level 1 Fields of Research for research outputs produced by the {params$research_unit} from {params$min_year} to {params$max_year}. The size of the nodes represents the total number of outputs assigned to a level 1 FoR and the size of the edges represents the total number of publications assigned to the connected nodes. {is_interactive}")
+#| fig-height: 7
+#| column: page-inset-right
+
+source(here("source_files", "subject_network.R"))
+
+subject_network(df_for_2020, params$palette)
+```
+
+### REF2021 Units of Assessment
+
+```{r}
+#| label: data-uoa
+df_uoa <- read_csv(here("data", glue("{params$project_name}_publications_uoa.csv")),
+                   show_col_types = FALSE)
+
+uoa_summary_results <- uoa_summary(df_uoa)
+outputs_with_no_uoa <- uoa_summary_results$outputs_with_no_uoa
+n_units_of_assessment <- uoa_summary_results$n_units_of_assessment
+uoas_per_publication <- uoa_summary_results$uoas_per_publication
+np_one_uoa <- uoa_summary_results$np_one_uoa
+uoa_summary <- uoa_summary_results$uoa_summary
+```
+
+Research outputs from the `r params$research_unit` are allocated to **`r n_units_of_assessment`** distinct units of assessment (UoA) based on the classification system used in the [2021 REF](https://www.ref.ac.uk). @tbl-uoa summarises the number of articles allocated to each unit of assessment. **`r np_one_uoa$n` (`r np_one_uoa$percent`%)** of outputs are allocated to a single UoA. There are `r outputs_with_no_uoa` outputs that have not been allocated a unit of assessment. 
+
+```{r}
+#| label:  tbl-uoa
+#| tbl-cap: !expr glue("Number of outputs for the {params$research_unit} allocated to units of assessment based on REF 2021.")
+#| cap-location: top
+
+knitr::kable(uoa_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+### Sustainable Devleopment Goals
+
+The Dimensions database classifies research outputs based on the seventeen Sustainable Development Goals set out by the United Nations in the [2030 Agenda for Sustainable Development](https://sdgs.un.org/2030agenda).
+
+```{r}
+#| label: data-sdg
+df_sdg <- read_csv(here("data", glue("{params$project_name}_publications_sdg.csv")),
+                   show_col_types = FALSE)
+
+sdg_summary_results <- sdg_summary(df_sdg)
+outputs_with_at_least_one_sdg <-sdg_summary_results$outputs_with_at_least_one_sdg
+outputs_with_no_sdg <- sdg_summary_results$outputs_with_no_sdg
+p_with_at_least_one_sdg <- sdg_summary_results$p_with_at_least_one_sdg
+n_unique_sdg <- sdg_summary_results$n_unique_sdg
+sdgs_per_publication <- sdg_summary_results$sdgs_per_publication
+n_with_multi_sdgs <- sdg_summary_results$n_with_multi_sdgs
+sdg_summary <- sdg_summary_results$sdg_summary
+```
+
+A total of **`r outputs_with_at_least_one_sdg` (`r p_with_at_least_one_sdg`%) outputs** in the result set are classified as associated with a Sustainable Development Goal. There are **`r n_with_multi_sdgs` outputs** associated with multiple SDGs. Research outputs from the `r params$research_unit` are associated with **`r n_unique_sdg` distinct SDGs** and @tbl-sdg presents the number of outputs associated with each of the relevant SDGs.
+
+```{r}
+#| label:  tbl-sdg
+#| tbl-cap: !expr glue("Research outputs produced by the {params$research_unit}, {params$min_year} to {params$max_year}, classified according to Sustainable Devleopment Goals. Please note that some outputs may be asociated with mutltiple SDGs")
+#| cap-location: top
+knitr::kable(sdg_summary, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+```{r}
+#| label: set-conditional-medical-cats
+
+conditional_run <- ifelse(params$project_name == "fohs" |
+                            params$project_name == "fols", TRUE, FALSE)
+
+medical_categories_include <- case_when(params$project_name == "fohs" ~ "health_studies_medical_categories.qmd",
+                                        params$project_name == "fols" ~ "life_sciences_medical_categories.qmd",
+                                        .default = NULL)
+
+```
+
+```{r}
+#| label: include-medical-cats
+#| child: !expr medical_categories_include
+#| eval: !expr conditional_run
+```
+
+# Impact
+
+```{r}
+#| label: data-impact
+df_citations <- df_publications %>%
+  select(publication_id, open_access, year, times_cited, field_citation_ratio) %>%
+  distinct(publication_id, open_access, year, times_cited, field_citation_ratio) %>%
+  mutate(open_access = str_to_title(open_access))
+
+impact_summary_results <- impact_summary(df_citations)
+
+n_distinct_outputs <- impact_summary_results$n_distinct_outputs
+total_citations <- impact_summary_results$total_citations
+n_cited_outputs <- impact_summary_results$n_cited_outputs
+n_uncited_outputs <- impact_summary_results$n_uncited_outputs
+p_uncited_outputs <- impact_summary_results$p_uncited_outputs
+p_cited_outputs <- impact_summary_results$p_cited_outputs
+i_10_index_by_year <- impact_summary_results$i_10_index_by_year
+i_10_index_overall <- impact_summary_results$i_10_index_overall
+p_i_10_index_overall <- impact_summary_results$p_i_10_index_overall
+```
+
+```{r}
+#| label: data-fcr
+fcr_summary_results <- fcr_summary(df_citations)
+
+fcr_class_summary <- fcr_summary_results$fcr_class_summary
+n_outputs_with_fcr <- fcr_summary_results$n_outputs_with_fcr
+n_uncited <- fcr_summary_results$n_uncited
+p_uncited <- fcr_summary_results$p_uncited
+n_below_average <- fcr_summary_results$n_below_average
+p_below_average <- fcr_summary_results$p_below_average
+n_above_average <- fcr_summary_results$n_above_average
+p_above_average <- fcr_summary_results$p_above_average
+median_fcr <- fcr_summary_results$median_fcr
+fcr_overall_geomean <- fcr_summary_results$fcr_overall_geomean
+```
+
+The result set used in this report covers the time period `r params$min_year` to `r params$max_year`. This is a limited time frame for outputs to accumulate citations and some research metrics, such as the Field Citation Ratio, require two years to have elapsed since publication in order to be calculated and are therefore only available for some outputs in the result set.
+
+:::{.callout-note title="Key performance indicators"}
+- Outputs with at least one citation: `r n_cited_outputs`
+- Total citations: `r total_citations`
+- Uncited outputs: `r p_uncited_outputs`%
+- Outputs with FCR > 1 (of those outputs that have a Field Citation Ratio - see @sec-fcr): `r p_above_average`%
+:::
+
+## Citations
+
+The `r n_distinct_outputs` outputs in the result set have received a total of `r total_citations` citations since `r params$min_year`. Of the outputs in the result set, `r n_cited_outputs` (`r p_cited_outputs`%) have at least one citation.
+
+@tbl-citations shows the total number of citations received by research outputs produced by the `r params$research_unit` by year of publication, along with the mean and median citations per output and the i-10 index.
+
+:::{.column-margin}
+The i-10 index indicates the number of academic publications that have been cited by at least 10 sources.
+:::
+
+```{r}
+#| label:  tbl-citations
+#| tbl-cap: !expr glue("Total and average citations by year of publication for research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}.")
+#| cap-location: top
+
+citations_by_year <- citations_summary(df_citations, i_10_index_by_year)
+outputs_over_two_years_old <- sum(citations_by_year$Outputs[citations_by_year$Year <= (max_year - 1)])
+
+knitr::kable(citations_by_year, align = rep("c", dim(citations_by_year)[2]), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+For the `r params$research_unit` data, the overall i-10 index is `r i_10_index_overall`, with **`r p_i_10_index_overall`%** or outputs receiving at least 10 citations.
+
+## Field Citation Ratio {#sec-fcr}
+
+The [Field Citation Ratio](https://dimensions.freshdesk.com/support/solutions/articles/23000018848-what-is-the-fcr-how-is-it-calculated-) (FCR) is a citation-based measure of the *relative* scientific influence of a research output when compared to similarly-aged outputs in the same field of research. It is calculated as the ratio of the number of citations of an output to the average number of citations received by outputs of the *same type published in the same year and in the same fields of research*. An FCR greater than 1.0 indicates that an output has more citations than average: for example, an output with an FCR of 1.5 has 50% more citations than average compared to similar outputs. An FCR of less than 1.0 indicates an output has fewer citations than average: for example, an output with an FCR of 0.75 has 25% fewer citations compared to similar outputs. Given the time frame covered by this report, Field Citation Ratios are only available for outputs published in `r params$max_year-2` or earlier.
+
+Of the `r outputs_over_two_years_old` research outputs that are at least two years old included in the result set, `r n_outputs_with_fcr` have a Field Citation Ratio. Of those research outputs within an FCR, `r n_uncited` (`r p_uncited`%) are uncited and have an FCR of zero, and `r n_below_average` (`r p_below_average`%) are below average. **`r n_above_average` (`r p_above_average`%)** of outputs perform better than average when compared to similar outputs. 
+@fig-fcr plots the distribution of FCR scores for `r params$research_unit`. The FCR scores range from `r fcr_summary_results$range_fcr[1]` to `r fcr_summary_results$range_fcr[2]`, with a median FCR score of **`r median_fcr`**. The geometric mean FCR score is **`r fcr_overall_geomean`**.
+
+```{r}
+#| label: fig-fcr
+#| fig-cap: !expr glue("The distribution of Field Citation Ratio scores for research outputs (n = {n_outputs_with_fcr}) published by the {params$research_unit}.")
+#| fig-width: 6
+
+fcr_box_plot(df_citations, discrete_pal) +
+  annotate("text", x = 1.55, y = 3, label = "Cited more than average \u2192")
+```
+
+## Citations of open access articles
+
+Limiting research outputs to *articles* only, @tbl-oa-impact shows that Gold, Green, and Hybrid open access articles tend to perform better than those that use the Bronze model and non-open access articles. The mean number of citations is potentially misleading due to the sensitivity of this statistic to outlying data points, with a single highly-cited output able to make the mean value unrepresentative of the data. The median number of citations and the geometric mean of the FCR scores are resistant to these effects and are preferred when interpreting these results.
+
+```{r}
+#| label:  tbl-oa-impact
+#| tbl-cap: !expr glue("Average citations by open access for articles published by the {params$research_unit}, {params$min_year} - {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+
+open_access_citation_results <- open_access_citations(open_access_data)
+
+knitr::kable(open_access_citation_results, 
+             align = c("l", rep("c", dim(open_access_citation_results)[2]-1)), 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+## Where was research cited?
+
+```{r}
+#| label: load-citing-publications
+df_citing_publications <- read_csv(here("data", "citing_publications", 
+                                        glue("{params$project_name}_citing_pubs_details.csv")), 
+                                   show_col_types = FALSE)
+
+# There needs to be an intervention here
+
+# df_citers <- read_csv(here("data", "citing_publications",
+#                            glue("{params$project_name}_citing_pubs_citers.csv")), 
+#                       show_col_types = FALSE) %>%
+#   distinct(publication_id, country, name, types)
+```
+
+```{r}
+#| label: data-citing-publications
+n_unique_citing_publications <- n_distinct(df_citing_publications$publication_id)
+```
+
+Research outputs published by researchers form the `r params$research_unit` was cited in `r n_unique_citing_publications` journals and @tbl-citing-journals shows the number of citations for each journal. @tbl-citing-publishers breaks down the number of citations by publisher.
+
+:::{.panel-tabset}
+
+## Journals
+
+```{r}
+#| label:  tbl-citing-journals
+#| tbl-cap: !expr glue("Number of citing publications in the top 25 journals referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| tbl-cap-location: top
+#| column: page-inset-right
+
+df_citing_journals <- citing_journals(df_citing_publications)
+
+knitr::kable(df_citing_journals, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "5em") %>%
+  kableExtra::column_spec(2, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+## Publishers
+
+```{r}
+#| label: tbl-citing-publishers
+#| tbl-cap-location: top
+#| tbl-cap: !expr glue("Number of citing publications by publisher referencing research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}. Only the top 20 publishers are shown.")
+#| column: page-inset-right
+
+df_citing_publishers <- citations_by_publisher(df_citing_publications)
+
+knitr::kable(df_citing_publishers, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "5em") %>%
+  kableExtra::column_spec(2, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+:::
+
+```{r}
+#| label: data-citers-stats
+# citers_summary_results <- citers_summary(df_citers)
+# 
+# n_unique_citing_countries <- citers_summary_results$n_unique_citing_countries
+# n_unique_citing_organisations <- citers_summary_results$n_unique_citing_organisations
+# n_nas_countries <- citers_summary_results$n_nas_countries
+# df_citing_countries <- citers_summary_results$df_citing_countries
+
+df_citing_countries <- read_csv(here("data", "citing_publications",
+                                  glue("{params$project_name}_citing_countries.csv")), 
+                             show_col_types = FALSE) %>%
+  select(country, publication_id) %>%
+  arrange(desc(publication_id)) %>%
+  rename(region = country,
+         frequency = publication_id) %>%
+  mutate(region = recode(str_trim(region), "United States" = "USA",
+                         "United Kingdom" = "UK",
+                         "Korea (Rep.)" = "South Korea",
+                         "Congo (Dem. Rep.)" = "Democratic Republic of the Congo",
+                         "Congo (Rep.)" = "Republic of Congo"))
+
+n_unique_citing_countries <- length(df_citing_countries$region)
+```
+
+@fig-citing-countries shows the number of citing publications from different countries. An output with authors from multiple countries is counted *once* for each country. Outputs with multiple authors from the same country are *not* counted once for each author; they are counted once for each country only.
+
+```{r}
+#| label: fig-citing-countries
+#| fig-cap: !expr glue("The geographical distribution of research organisations citing research outputs produced by the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+#| fig-height: 7
+#| column: page-inset-right
+
+world <- world_map_data()
+map_citing_countries <- left_join(world, df_citing_countries, by = "region") %>% 
+  filter(region != "Antarctica")
+ggplotly(world_map_plot(map_citing_countries, params$palette, scale_name = "Citing publications"),
+         tooltip = "text")
+```
+
+@tbl-citing-orgs shows the organisations that cite research by the `r params$research_unit` most frequently. @fig-citing-types breaks down the citing organisations by type of organisation. An output with authors from multiple organisations is counted *once* for each organisation. Outputs with multiple authors from the same organisation are *not* counted once for each author; they are counted once for each organisation only.
+
+:::{.panel-tabset}
+
+## Citing organisations
+
+```{r}
+#| label: tbl-citing-orgs
+#| tbl-cap: !expr glue("Research organisations most frequently citing research outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")
+#| tbl-cap-location: top
+#| column: page-inset-right
+
+# df_citing_orgs <- citing_orgs(df_citers)
+
+citing_orgs <- read_csv(here("data", "citing_publications",
+                             glue("{params$project_name}_citing_organisations.csv")), 
+                        show_col_types = FALSE)
+
+n_unique_citing_organisations <- length(citing_orgs$name)
+
+df_citing_orgs <- citing_orgs %>%
+  rename(citing_publications = publication_id) %>%
+  # filter(citing_publications >= 50) %>%
+  arrange(desc(citing_publications)) %>%
+  relocate(citing_publications) %>%
+  select(citing_publications, name) %>%
+  pivot_wider(names_from = citing_publications, 
+              values_from = name, 
+              values_fn = list) %>%
+  t() %>% 
+  data.frame() %>%
+  rename(`Citing organisation` = 1) %>%
+  rownames_to_column(var = "Citing publications") %>%
+  rowwise() %>%
+  mutate(`Citing organisation` = toString(`Citing organisation`))
+
+knitr::kable(df_citing_orgs, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(1, width = "5em") %>%
+  kableExtra::column_spec(2, width = "40em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+## Citing organisation types
+
+```{r}
+#| label: fig-citing-types
+#| fig-cap: !expr glue("Types of organisation citing research outputs by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+# citing_org_types(df_citers, discrete_pal)#, 
+#                  #label_colours = c("black", rep("white", 3), rep("black", 3)))
+
+# citing_org_types(df_citers, discrete_pal)
+
+df_citing_org_types <- read_csv(here("data", "citing_publications",
+                             glue("{params$project_name}_citing_org_types.csv")), 
+                        show_col_types = FALSE)
+
+# citing_org_types(df_citers, discrete_pal)
+
+citing_org_types(df_citing_org_types, discrete_pal)
+```
+
+:::
+
+# Collaboration
+
+This section looks at collaborations between researchers in the `r params$research_unit` and researchers at other organisations, providing an overview of the different types of collaborations, collaborations with UK and international partners, and collaborations with education and non-educational partners.
+
+```{r load-collab-data}
+#| label: load-collab-data
+research_organisations <- read_csv(here("data", glue("{params$project_name}_research_organisations.csv")),
+                                   show_col_types = FALSE) %>% 
+  filter(type != "preprint")
+
+research_organisations <- research_organisations %>%
+  group_by(publication_id) %>%
+  mutate(collaboration = case_when(length(organisation_name) == 1 ~ "Single authored",
+                                   n_distinct(organisation_name) == 1 ~"Institutional co-authored",
+                                   n_distinct(country_name) == 1 ~ "National collaboration",
+                                   .default = "International collaboration")) %>%
+  ungroup()
+
+research_organisations$collaboration <- factor(research_organisations$collaboration, 
+                                                 levels = c("Single authored",
+                                                            "Institutional co-authored",
+                                                            "National collaboration",
+                                                            "International collaboration"))
+```
+
+```{r}
+#| label: collab-type-summary
+collaboration_summary_results <- collaboration_summary(research_organisations)
+
+df_types_of_collaboration <- collaboration_summary_results$df_types_of_collaboration
+p_collaboration <- collaboration_summary_results$p_collaboration
+```
+
+```{r}
+#| label: collab-countries-summary
+countries_collab_summary_results <- countries_collab_summary(research_organisations)
+
+collaboration_countries <- countries_collab_summary_results$collaboration_countries
+df_collaborating_countries <- countries_collab_summary_results$df_collaborating_countries
+n_collaborating_countries <- countries_collab_summary_results$n_collaborating_countries
+max_country <- countries_collab_summary_results$max_country
+```
+
+```{r}
+#| label: collab-orgs-summary
+orgs_collab_summary_results <- collaborating_orgs_summary(research_organisations)
+
+unique_organisations <- orgs_collab_summary_results$unique_organisations
+n_unique_collaborators <- orgs_collab_summary_results$n_unique_collaborators
+n_publications_with_non_educational_collaborators <- orgs_collab_summary_results$n_publications_with_non_educational_collaborators
+p_publications_with_non_educational_collaborators <- orgs_collab_summary_results$p_publications_with_non_educational_collaborators
+n_non_educational_collaborators <- orgs_collab_summary_results$n_non_educational_collaborators
+outputs_in_sample_by_type_of_collaborator <- orgs_collab_summary_results$outputs_in_sample_by_type_of_collaborator
+df_types_of_collaborators <- orgs_collab_summary_results$df_types_of_collaborators
+```
+
+:::{.callout-note title="Key performance indicators"}
+- Outputs arising from collaborations: `r round(p_collaboration, 0)`%[*Collaboration* refers to outputs where at least one author is not from the University of Bradford.]{.aside}
+- Collaborating countries: `r n_collaborating_countries`
+- Collaborating organisations: `r n_unique_collaborators`
+- Outputs with non-academic partners: `r round(p_publications_with_non_educational_collaborators, 0)`%
+:::
+
+## Types of collaboration
+
+Research outputs produced by the `r params$research_unit` are broken down into four types of research collaboration:
+
+- Single authored: a research output with a single author from the University of Bradford.
+- Institutional co-authored: a research output with multiple authors from the University of Bradford.
+- National collaboration: a research output with at least one co-author from another research organisation based in the UK.
+- International collaboration: a research output with at least one co-author from another research organisation based outside the UK.
+
+From @tbl-collab-types we see that single authored papers account for only a small percentage of the total number of research outputs from the `r params$research_unit`. There are no outputs classed as being institutionally co-authored, indicating that all outputs with more than author from the University of Bradford also have at least one co-author from another research organisation, based either in the UK or beyond.
+
+```{r}
+#| label: tbl-collab-types
+#| tbl-cap: !expr glue("Number of research outputs for each type of collaboration with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+
+knitr::kable(df_types_of_collaboration, align = "lcc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+@fig-collab-types breaks down the collaboration types by year and @fig-collab-types-cum shows the cumulative trend in research outputs by collaboration type.
+
+:::{.panel-tabset}
+
+## Collaboration types
+
+```{r}
+#| label: fig-collab-types
+#| fig-cap: !expr glue("Research collaborations by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+collab_summary_figures <- collab_summary_plots(research_organisations, discrete_pal)
+ggplotly(collab_summary_figures$collab_type_plot, tooltip = "text")
+```
+
+## Collaboration trends
+
+```{r}
+#| label: fig-collab-types-cum
+#| fig-cap: !expr glue("Cumualtive research outputs by collaboration type for the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+ggplotly(collab_summary_figures$collab_type_cum, tooltip = "text")
+```
+
+:::
+
+## Countries
+
+Researchers in the `r params$research_unit` have collaborated with researchers from organisations in **`r n_collaborating_countries` different countries**. <!--@fig-top-k-countries presents the top ranked countries by number of collaborations with the `r params$research_unit`. -->With `r max(df_collaborating_countries$frequency)`, the **`r max_country`** is the main source of research collaborations, and @fig-map-collab maps the total number of collaborations across the globe. 
+
+```{r}
+#| label: fig-top-k-countries
+#| eval: false
+#| fig-cap: !expr glue("Top 15 most collaborative countries with the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+collab_countries_figures <- collab_countries_plots(df_collaborating_countries, discrete_pal, k = 15)
+collab_countries_figures$collab_countries_barplot
+```
+
+```{r}
+#| label: fig-map-collab
+#| fig-cap: !expr glue("The geographical distribution of research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}. {is_interactive}")
+#| fig-height: 7
+#| column: page-inset-right
+
+world <- world_map_data()
+map_collab_countries <- left_join(world, df_collaborating_countries, by = "region") %>% 
+  filter(region != "Antarctica")
+ggplotly(world_map_plot(map_collab_countries, params$palette, scale_name = "Collaborations"),
+         tooltip = "text")
+```
+
+## Organisations
+
+Researchers in the `r params$research_unit` collaborated with researchers at `r n_unique_collaborators` research organisations. 
+
+:::{.column-margin}
+The total number of collaborating organisations includes the Wolfson Centre for Applied Health Research as a joint venture between the University of Bradford, Bradford Teaching Hospitals NHS Trust, and the University of Leeds
+:::
+
+@tbl-non-ed-collab summarises the number of different types of research organisations to collaborate with researchers from `r params$research_unit` from `r params$min_year` to `r params$max_year` and the number of outputs in the result set by the type of collaborating research organisation. @fig-top-orgs shows the top 15 organisations with the most collaborations with researchers from the University of Bradford.
+
+:::{.panel-tabset}
+
+## Organisation types
+
+```{r}
+#| label: fig-orgs-types
+#| eval: false
+#| fig-cap: !expr glue("Types of research organisations collaborating with the {params$research_unit} by organisation type, {params$min_year} - {params$max_year}.")
+
+# This has been replaced with the table below - remember that collab_orgs_figures isn't created until later so don't
+# worry about the error message
+# Move this out later because we are not going to use it here
+collab_orgs_figures$collab_org_types_plot
+```
+
+```{r tbl-non-ed-collab}
+#| label: tbl-non-ed-collab
+#| tbl-cap: !expr glue("Number of research outputs for each type of organisation collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+
+knitr::kable(outputs_in_sample_by_type_of_collaborator, align = "lcccc", 
+             booktabs = TRUE, linesep = "\\addlinespace",
+             col.names = c("Organisation type",
+                           "Organisations",
+                           "Percent",
+                           "Outputs")) %>%
+  kableExtra::footnote(general = "An output may be counted multiple times where co-authors were from more than one type of organisation.") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+## Top 15 collaborators
+
+```{r}
+#| label: collab-orgs-figures
+collab_orgs_figures <- collab_orgs_plots(research_organisations, unique_organisations, discrete_pal, k = 15)
+```
+
+```{r}
+#| label: fig-top-orgs
+#| fig-cap: !expr glue("The top 15 organisations collaborating with the {params$research_unit} by output volume, {params$min_year} - {params$max_year}.")
+#| fig-height: 6
+
+collab_orgs_figures$top_k_orgs_plot
+```
+
+:::
+
+@fig-outputs-orgs shows the number of research outputs produced in collaboration with different types of research organisations in each year covered by the result set and @fig-outputs-orgs-cum the cumulative number of collaborations for each type of research organisation.
+
+:::{.panel-tabset}
+
+## Organisation types
+
+```{r}
+#| label: fig-outputs-orgs
+#| fig-cap: !expr glue("Research collaborations by organisation type for the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+ggplotly(collab_orgs_figures$outputs_by_org_type_plot, tooltip = "text")
+```
+
+## Collaboration trends
+
+```{r}
+#| label: fig-outputs-orgs-cum
+#| fig-cap: !expr glue("Cumulative number of research collaborations by organisation type for the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+ggplotly(collab_orgs_figures$cum_outputs_by_org_type_plot, tooltip = "text")
+```
+
+:::
+
+### Collaborations with educational research organisations
+
+```{r}
+#| label: data-educational-collab
+educational_collab_results <- educational_collab_summary(research_organisations)
+
+n_educational_collaborators <- educational_collab_results$n_educational_collaborators
+n_uk_educational_collaborators <- educational_collab_results$n_uk_educational_collaborators
+n_int_educational_collaborators <- educational_collab_results$n_int_educational_collaborators
+uk_educational_collab <- educational_collab_results$uk_educational_collab
+int_educational_collab <- educational_collab_results$int_educational_collab
+```
+
+Researchers from the `r params$research_unit` collaborated with **`r n_educational_collaborators`** educational research organisations on `r n_publications_with_non_educational_collaborators` research outputs from `r params$min_year` to `r params$max_year`. Of these, **`r n_uk_educational_collaborators`** were based in the United Kingdom and **`r n_int_educational_collaborators`** were based outside the UK.
+
+@tbl-uk-ed presents the number of outputs for each UK-based educational research organisation produced in collaboration with researchers from the `r params$research_unit`. @tbl-int-ed presents the number of outputs for each educational research organisation based outside the UK produced in collaboration with researchers from the `r params$research_unit`.
+
+:::{.panel-tabset}
+
+## UK HEIs
+
+```{r}
+#| label: tbl-uk-ed
+#| tbl-cap: !expr glue("Number of research outputs for each UK-based educational research organisation collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+
+knitr::kable(uk_educational_collab, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px;")
+```
+
+## International HEIs
+
+```{r tbl-int-ed}
+#| label: tbl-int-ed
+#| tbl-cap: !expr glue("Number of research outputs for each educational research organisation based outside the UK collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+#| column: page-inset-right
+
+knitr::kable(int_educational_collab, align = "cl", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px;")
+```
+
+:::
+
+### Collaborations with non-educational research organisations
+
+```{r}
+#| label: data-non-ed-collab
+non_ed_collab_results <- non_ed_collab_summary(research_organisations, discrete_pal,
+                                               unique_organisations)
+
+n_uk_non_educational_collaborators <- non_ed_collab_results$n_uk_non_educational_collaborators
+n_int_non_educational_collaborators <- non_ed_collab_results$n_int_non_educational_collaborators
+```
+
+Researchers from the `r params$research_unit` collaborated with `r n_non_educational_collaborators` non-educational research organisations on `r n_publications_with_non_educational_collaborators` research outputs from `r params$min_year` to `r params$max_year`, so that a total of `r p_publications_with_non_educational_collaborators`% of research outputs have at least one researcher from non-educational research organisation listed as a co-author. @tbl-non-ed-annual and breaks down the number of research outputs with at least one non-educational collaborator from `r min_year` to `r max_year`. 
+
+```{r}
+#| label: tbl-non-ed-annual
+#| tbl-cap: !expr glue("Annual number of research outputs with at least one non-educational partner collaborating with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| tbl-cap-location: top
+
+non_ed_annual <- non_ed_collab_outputs(research_organisations, df_output_growth)
+
+knitr::kable(non_ed_annual, align = "cccc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::column_spec(2, width = "15em") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::remove_column(., 4)
+```
+
+@tbl-outputs-UK-orgs shows the number of research outputs produced in collaboration with `r n_uk_non_educational_collaborators` non-educational research organisations based in the UK. @tbl-outputs-int-orgs shows the number of research outputs produced in collaboration with `r n_int_non_educational_collaborators` non-educational research organisations based outside the UK.
+
+:::{.panel-tabset}
+
+## UK non-HEI collaborators
+
+```{r}
+#| label: fig-outputs-UK-orgs
+#| fig-cap: !expr glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")
+#| fig-height: 7
+#| column: page-inset-right
+#| eval: false
+#| include: false
+
+# df_uk_orgs <- non_ed_collab_results$df_uk_orgs
+# non_ed_orgs_plot(df_uk_orgs, discrete_pal)
+```
+
+```{r}
+#| label: tbl-outputs-UK-orgs
+#| tbl-cap: !expr glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")
+#| tbl-cap-location: top
+#| column: page-inset-right
+
+df_uk_non_ed_orgs <- non_ed_collab_results$df_uk_non_ed_orgs
+
+df_uk_non_ed_orgs %>%
+  arrange(organisation_type) %>%
+  kable(align = "lcl") %>% 
+  pack_rows(index = table(df_uk_non_ed_orgs$organisation_type), color = "white", background = "#303030") %>%
+  remove_column(1) %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::column_spec(1, width = "7em") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+## International non-HEI collaborators
+
+```{r}
+#| label: fig-outputs-int-orgs
+#| fig-cap: !expr glue("The number of research outputs by organisation type for international non-educational research organisations collaborating with the {params$research_unit}, {params$min_year} - {params$max_year}.")
+#| fig-height: 6
+#| column: page-inset-right
+#| eval: false
+#| include: false
+
+# df_int_non_edu_collab <- non_ed_collab_results$df_int_non_edu_collab
+# non_ed_orgs_plot(df_int_non_edu_collab, discrete_pal)
+```
+
+```{r}
+#| label: tbl-outputs-int-orgs
+#| tbl-cap: !expr glue("The number of research outputs by researchers in the {params$research_unit} collaborating with UK-based non-educational research organisations, {params$min_year} - {params$max_year}.")
+#| tbl-cap-location: top
+#| column: page-inset-right
+
+df_int_non_ed_orgs <- non_ed_collab_results$df_int_non_ed_orgs
+
+df_int_non_ed_orgs %>%
+  arrange(organisation_type) %>%
+  kable(align = "lcl") %>% 
+  pack_rows(index = table(df_int_non_ed_orgs$organisation_type), color = "white", background = "#303030") %>%
+  remove_column(1) %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030") %>%
+  kableExtra::column_spec(1, width = "7em") %>%
+  kableExtra::scroll_box(height = "500px",
+                         box_css = "border: 1px solid #ddd; padding: 5px; ",
+                         fixed_thead = list(enabled = T, background = "#fff"))
+```
+
+:::
+
+# Altmetrics
+
+[Altmetrics](https://www.altmetric.com/) (Alternative metrics) are a way of measuring the attention received research by tracking its online activity and engagement across social media channels (e.g. Twitter, Facebook), news media, websites (e.g. Wikipedia), post-publication peer-review channels, and policy documents. Data on Mendeley readers is also captured.
+
+This section presents an overview of the online attention received by research outputs produced by researchers in the `r params$research_unit`. 
+
+```{r}
+#| label: data-altmetrics
+df_altmetrics <- read_csv(here("data", glue("{params$project_name}_altmetric_details.csv")),
+                          show_col_types = FALSE) %>%  
+  distinct(doi, .keep_all = TRUE) %>%
+  arrange(desc(Altmetric)) %>%
+  mutate(rank = rank(-Altmetric, ties.method = "min")) %>%
+  relocate(rank)
+
+pubs <- df_publications %>%
+  select(-researcher_id) %>%
+  distinct(doi, .keep_all = TRUE)
+
+df_altmetrics <- inner_join(df_altmetrics, pubs, by = "doi") %>% 
+  mutate(open_access = str_to_title(open_access))
+```
+
+```{r}
+#| label: altmetrics-summary
+altmetrics_results <- altmetrics_summary(df_altmetrics)
+
+n_outputs_with_altmetric_score <- altmetrics_results$n_outputs_with_altmetric_score
+altmetric_scores_summary <- altmetrics_results$altmetric_scores_summary
+```
+
+```{r}
+#| label: altmetrics-types
+altmetrics_types_results <- altmetric_types(df_altmetrics, n_unique_outputs)
+
+n_outputs_in_news <- altmetrics_types_results$n_outputs_in_news
+n_mentions_in_news <- altmetrics_types_results$n_mentions_in_news
+n_outputs_in_policy_docs <- altmetrics_types_results$n_outputs_in_policy_docs
+n_mentions_in_policy_docs <- altmetrics_types_results$n_mentions_in_policy_docs
+altmetric_summary <- altmetrics_types_results$altmetric_summary %>% rename_with(str_to_title)
+```
+
+:::{.callout-note title="Key performance indicators"}
+- Outputs receiving attention online: `r n_outputs_with_altmetric_score`
+- Median altmetric score: `r altmetric_scores_summary$median`
+- Mentions in news media: `r n_mentions_in_news`
+- Outputs mentioned in policy documents: `r n_mentions_in_policy_docs`
+:::
+
+## Altmetric scores
+
+The Altmetric score is a high-level measure of the online attention for an output and is calculated as the weighted sum of the different types of attention received, so that a mention in a policy document makes a greater contribution to the score than a single tweet, for example. Altmetric scores are calculated on the last date an output was mentioned. The number of Mendeley readers is not included in calculating the Altmetric score.
+
+A total of **`r n_outputs_with_altmetric_score`** outputs have an Altmetric score. @fig-altmetric-bar plots the distribution of Altmetric scores for outputs in the result set. The median Altmetric score for outputs produced by researchers in the `r params$research_unit` is `r altmetric_scores_summary$median`, with a range of `r altmetric_scores_summary$min` to `r altmetric_scores_summary$max`.
+
+```{r}
+#| label: fig-altmetric-bar
+#| fig-cap: !expr glue("The distribution of Altemtric scores for outputs produced by researchers from the {params$research_unit}, {params$min_year} - {params$max_year}.")
+
+altmetrics_plot(df_altmetrics, discrete_pal)
+```
+
+:::{.column-margin}
+Please note: not all outputs have an Altmetric score.
+:::
+
+@tbl-altmetric-summary breaks down research outputs by channel of online attention, showing the number of outputs produced by researchers from the `r params$research_unit` that received attention via a particular channel and the total number of mentions received via that channel. Research outputs received attention across a total of `r dim(altmetric_summary)[1] - 1` different channels of attention, excluding Mendeley readers.
+
+A total of **`r n_outputs_in_news`** outputs received **`r n_mentions_in_news`** mentions in mainstream news media.
+
+A total of **`r n_outputs_in_policy_docs`** outputs were mentioned in policy documents for a total of **`r n_mentions_in_policy_docs`** mentions.
+
+```{r}
+#| label: tbl-altmetric-summary
+#| tbl-cap: !expr glue("Online attention of research outputs produced by researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
+#| cap-location: top
+
+knitr::kable(altmetric_summary, align = "lccc", 
+             booktabs = TRUE, linesep = "\\addlinespace") %>%
+  kableExtra::row_spec(0, background = "white", color = "#303030")
+```
+
+```{r}
+#| label: data-altmetrics-context
+#| eval: false
+altmetric_context_results <- altmetrics_context(df_altmetrics, discrete_pal)
+  
+outputs_with_altmetric_context <- altmetric_context_results$outputs_with_altmetric_context
+altmetric_context_data_summary <- altmetric_context_results$altmetric_context_data_summary
+```
+
+<!-- The Altmetric score for a target output can be contextualised by comparing its score to those of *all* outputs published in the same source (e.g., in the same journal) and those outputs published in that source within a three month window comprising the six weeks before and the six weeks after the target output's date of publication. The percentile rank of a target output's Altmetric score can then be determined. Contextual data is available for `r #outputs_with_altmetric_context` outputs, and the percentile ranks are shown in @fig-altmetric-context. -->
+
+```{r}
+#| label: fig-altmetric-context
+#| fig-cap: !expr glue("The context of research outputs produced by {params$research_unit}, {params$min_year} - {params$max_year}, based on Altmetric percentiles.")
+#| eval: false
+#| include: false
+
+altmetric_context_results$altmetric_context_distribution
+```
+
+<!-- The median percentile when comparing outputs produced by researchers from the `r params$research_unit` to all other outputs in their respective sources is `r #altmetric_context_data_summary$median[1]`, with a range of `r #altmetric_context_data_summary$min[1]` to `r #altmetric_context_data_summary$max[1]`.  -->
+
+<!-- The median percentile when comparing outputs produced by researchers from the `r params$research_unit` to outputs in their respective sources of the same age is `r #altmetric_context_data_summary$median[2]`, with a range of `r #altmetric_context_data_summary$min[2]` to `r #altmetric_context_data_summary$max[2]`. -->
+
+<!-- # Research outputs {-} -->
+
+<!-- A list of research outputs for the `r params$research_unit` is available. -->
+
+<!-- ::: {#refs} -->
+<!-- ::: -->
+
+```{r}
+#| label: export-session-info
+#| echo: false
+
+report_date <- format(Sys.Date(), '%Y_%m_%d')
+writeLines(capture.output(sessionInfo()), 
+           glue("{params$project_name}_{report_date}_sessionInfo.txt"))
+```
+

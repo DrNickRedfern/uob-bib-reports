@@ -1,4 +1,4 @@
-impact_summary <- function(df){
+impact_summary <- function(df){ 
   
   n_distinct_outputs <- dim(df)[1]
   
@@ -166,56 +166,83 @@ open_access_citations <- function(df){
   
 }
 
-citing_journals <- function(df, k = 25){
+citing_journals <- function(df){
   
   df %>%
     filter(type == "article") %>%
     group_by(journal_title_raw) %>%
     tally(n = "count") %>%
     ungroup() %>%
-    top_n(., k, count) %>%
     arrange(desc(count)) %>%
     relocate(count) %>% 
-    pivot_wider(names_from = count, values_from = journal_title_raw, values_fn = list) %>%
-    t() %>% data.frame %>% 
+    # filter(count >= 50) %>%
+    pivot_wider(names_from = count, 
+                values_from = journal_title_raw, 
+                values_fn = list) %>%
+    t() %>% 
+    data.frame() %>% 
     rename(Journal = 1) %>%
     rownames_to_column(var = "Citing publications") %>%
     rowwise() %>%
-    mutate(Journal = toString(Journal)) %>%
-    ungroup()
+    mutate(Journal = toString(Journal))
   
 }
 
-citations_by_publisher <- function(df, k = 20, discrete_pal){
+citations_by_publisher <- function(df) {
   
-  df <- df %>%
+  df %>%
     filter(!is.na(publisher)) %>%
     group_by(publisher) %>%
     tally(n = "citing_publications") %>%
+    ungroup() %>%
     arrange(desc(citing_publications)) %>%
-    top_n(k, citing_publications)
-  
-  df$publisher = factor(df$publisher, levels = df$publisher[order(df$citing_publications)])
-  
-  ggplot(data = df,
-         aes(x = publisher, y = citing_publications)) +
-    geom_bar(stat = "identity", fill = discrete_pal[9]) +
-    geom_text(aes(label = citing_publications), hjust = -0.5, size = 3) +
-    scale_x_discrete(name = NULL,
-                     labels = function(x) str_wrap(x, width = 40)) +
-    scale_y_continuous(name = NULL, expand = expansion(mult = c(0, 0.1))) +
-    coord_flip() +
-    my_theme() +
-    theme(axis.line.x = element_blank(),
-          axis.text.x = element_blank(),
-          panel.grid.major.y = element_blank())
+    relocate(citing_publications) %>% 
+    pivot_wider(names_from = citing_publications, 
+                values_from = publisher, 
+                values_fn = list) %>%
+    t() %>% 
+    data.frame() %>% 
+    rename(Publisher = 1) %>%
+    rownames_to_column(var = "Citing publications") %>%
+    rowwise() %>%
+    mutate(Publisher = toString(Publisher))
   
 }
 
 citers_summary <- function(df){
   
-  n_unique_citing_countries <- n_distinct(df$country)
-  n_unique_citing_organisations <- n_distinct(df$name)
+  # n_unique_citing_countries <- n_distinct(df$country)
+  # n_unique_citing_organisations <- n_distinct(df$name)
+  
+  # n_nas_countries <- df %>%
+  #   filter(is.na(country)) %>%
+  #   tally() %>%
+  #   unlist %>%
+  #   unname
+  
+  # df_citing_countries <- df %>%
+  #   filter(!is.na(country)) %>%
+  #   group_by(country) %>%
+  #   tally(n = "frequency") %>%
+  #   ungroup() %>%
+  #   arrange(desc(frequency)) %>%
+  #   rename(region = country) %>%
+  #   mutate(region = recode(str_trim(region), "United States" = "USA",
+  #                          "United Kingdom" = "UK",
+  #                          "Korea (Rep.)" = "South Korea",
+  #                          "Congo (Dem. Rep.)" = "Democratic Republic of the Congo",
+  #                          "Congo (Rep.)" = "Republic of Congo"))
+  
+  # outputs_list = list("n_unique_citing_countries" = n_unique_citing_countries,
+  #                     "n_unique_citing_organisations" = n_unique_citing_organisations,
+  #                     "n_nas_countries" = n_nas_countries,
+  #                     "df_citing_countries" = df_citing_countries)
+  
+  n_unique_citing_countries <- df %>%
+    filter(!is.na(country)) %>%
+    summarise(n = n_distinct(country)) %>%
+    unlist %>%
+    unname
   
   n_nas_countries <- df %>%
     filter(is.na(country)) %>%
@@ -223,10 +250,16 @@ citers_summary <- function(df){
     unlist %>%
     unname
   
+  n_unique_citing_organisations <- df %>%
+    filter(!is.na(name)) %>%
+    summarise(n = n_distinct(name)) %>%
+    unlist %>%
+    unname
+  
   df_citing_countries <- df %>%
     filter(!is.na(country)) %>%
     group_by(country) %>%
-    tally(n = "frequency") %>%
+    summarise(frequency = n_distinct(publication_id)) %>%
     ungroup() %>%
     arrange(desc(frequency)) %>%
     rename(region = country) %>%
@@ -243,34 +276,24 @@ citers_summary <- function(df){
   
 }
 
-citing_orgs <- function(df, k = 10, discrete_pal){
+citing_orgs <- function(df) {
   
   df <- df %>%
     filter(!is.na(name)) %>%
     group_by(name) %>%
-    tally(n = "frequency") %>%
+    tally(n = "citing_publications") %>%
     ungroup() %>%
-    arrange(desc(frequency)) %>%
-    mutate(rank = rank(-frequency, ties.method = "min")) %>%
-    relocate(rank) %>%
-    filter(rank <= k)
-  
-  df$name <- factor(df$name, levels = df$name[order(df$frequency)])
-  
-  ggplot(data = df, aes(x = name, y = frequency)) +
-    geom_bar(stat = "identity", fill = discrete_pal[9]) +
-    geom_text(aes(label = frequency), hjust = -0.5, size = 3) +
-    scale_x_discrete(name = NULL,
-                     labels = function(x) str_wrap(x, width = 40)) +
-    scale_y_continuous(name = NULL,
-                       expand = expansion(mult = c(0, 0.1))
-    ) +
-    coord_flip() +
-    my_theme() +
-    theme(axis.line.x = element_blank(),
-          axis.text.x = element_blank(),
-          axis.ticks.x = element_blank(),
-          panel.grid.major.y = element_blank())
+    arrange(desc(citing_publications)) %>%
+    relocate(citing_publications) %>%
+    pivot_wider(names_from = citing_publications, 
+                values_from = name, 
+                values_fn = list) %>%
+    t() %>% 
+    data.frame() %>%
+    rename(`Citing organisation` = 1) %>%
+    rownames_to_column(var = "Citing publications") %>%
+    rowwise() %>%
+    mutate(`Citing organisation` = toString(`Citing organisation`))
   
 }
 
@@ -280,20 +303,19 @@ citing_org_types <- function(df, discrete_pal,
   df_org_types_colours <- org_colours(discrete_pal)
   
   df <- df %>%
-    filter(!is.na(types)) %>%
-    group_by(types) %>%
-    tally(n = "count") %>%
-    ungroup() %>%
+    rename(count = publication_id) %>%
+    select(types, count) %>%
+    arrange(count) %>%
     arrange(count) %>%
     mutate(prop = round(count/sum(count), 3),
            cum_count = rev(cumsum(rev(count))),
            pos = count/2 + lead(cum_count, 1),
            pos = if_else(is.na(pos), count/2, pos),
-           colour = VLOOKUP(types, df_org_types_colours, org_type, colour))
-  
-  df$types <- factor(df$types, levels = df$types[order(df$count)])
-  
-  df$colour <- factor(df$colour, levels = df$colour[order(df$count)])
+           colour = VLOOKUP(types, df_org_types_colours, org_type, colour),
+           l = decode_colour(colour, to = "hcl")[,"l"],
+           label_colours = ifelse(l < 55, "white", "black")) %>%
+    mutate(types = factor(types, levels = types[order(.$count)]),
+           colour = factor(colour, colour[order(.$count)]))
   
   ggplot(data = df, aes(x = 2, y = count, fill = colour)) +
     geom_col(colour = "black", linewidth = 0.5) +
@@ -302,7 +324,7 @@ citing_org_types <- function(df, discrete_pal,
                          fill = colour),
                      size = 3.5,
                      nudge_x = 1,
-                     colour = label_colours,
+                     colour = df$label_colours,
                      show.legend = FALSE) +
     scale_fill_identity(name = NULL,
                         labels = df$types,
