@@ -21,6 +21,7 @@ GRIDID = 'grid.6268.a'
   
 df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'faculty.csv'))
 df_staff_list = df_staff_list[df_staff_list['level_2_long_desc'] == RESEARCH_UNIT]
+df_staff_list = df_staff_list[df_staff_list['researcher_id'].notnull()]
 
 publications = dsl.query_iterative(f"""search publications
                                           where (researchers.id in {json.dumps(list(df_staff_list['researcher_id']))} and 

@@ -255,6 +255,7 @@ level_3_outputs <- df_publications %>%
   group_by(school, year) %>%
   summarise(n = n_distinct(publication_id)) %>%
   ungroup() %>%
+  complete(school, year, fill = list(n = 0)) %>%
   pivot_wider(names_from = "year", values_from = "n") %>%
   adorn_totals(., where = "col") %>%
   replace(is.na(.), "Not assigned") %>%
