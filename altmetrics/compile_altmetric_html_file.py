@@ -4,7 +4,7 @@ import tomli
 
 # * Load the dois we want to produce badges for
 HOME_DIR = os.getcwd()
-ALTMETRICS_DIR = os.path.join(os.getcwd(), "altmetrics")
+ALTMETRICS_DIR = os.path.join(HOME_DIR, "altmetrics")
 DATA_DIR = os.path.join(HOME_DIR, 'data')
 
 with open(os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode='rb') as f:

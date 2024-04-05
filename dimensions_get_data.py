@@ -29,6 +29,8 @@ if not os.path.isdir(CITING_PUBLICATIONS):
 else:
     print(CITING_PUBLICATIONS, ': folder already exists.')
 
+GRIDID = 'grid.6268.a'
+
 # * Functions
 def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
     
@@ -135,6 +137,7 @@ df_publications_details_split = np.array_split(df_publications_details, split)
 # * Authors: positions and corresponding
 df_publications = pd.DataFrame()
 df_authors = pd.DataFrame()
+df_affiliations = pd.DataFrame()
 for i in range(len(df_publications_details_split)):
     pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
     results = dsl.query(f"""search publications
@@ -145,9 +148,11 @@ for i in range(len(df_publications_details_split)):
     
     df_pubs_temp = results.as_dataframe()
     df_authors_temp = results.as_dataframe_authors()
-    
+    df_affiliations_temp = results.as_dataframe_authors_affiliations()
+
     df_publications = pd.concat([df_publications, df_pubs_temp])
     df_authors = pd.concat([df_authors, df_authors_temp])
+    df_affiliations = pd.concat([df_affiliations, df_affiliations_temp])
 
 # TODO This needs tidying up into a single step
 df_publications = df_publications[df_publications['type'] == 'article']
@@ -191,6 +196,8 @@ brad_authors = brad_authors.drop(columns=['id', 'raw_affiliation', 'first_name',
 brad_authors['corresponding'] = brad_authors['corresponding'].astype(bool)
 
 brad_authors.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_author_positions.csv"])), index = False)
+
+df_affiliations = df_affiliations.filter(['aff_id', 'aff_name', 'pub_id'])
 
 # * Publications: categories
 df_publications_categories = pd.DataFrame()
@@ -278,6 +285,20 @@ df_research_organisations = (
     )
 )
 
+df_research_organisations = pd.merge(
+    left=df_research_organisations,
+    right=df_affiliations,
+    left_on='publication_id',
+    right_on='pub_id',
+    how='inner' # left
+)
+
+df_research_organisations = (
+    df_research_organisations
+    .pipe(lambda df: df[df['organisation_name'] == df['aff_name']])
+    .filter(['publication_id', 'organisation_id', 'country_name', 'organisation_name', 'organisation_type', 'type', 'year'])
+)
+
 df_research_organisations.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_research_organisations.csv"])), index = False)
 
 # * Citing publications
@@ -354,40 +375,5 @@ df_citing_orgs_types = (
     .reset_index()
 )
 df_citing_orgs_types.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_org_types.csv"])), index = False)
-
-# # Citing authors details
-# df_cit_pubs_authors = (
-#     df_cit_pubs
-#     .explode('authors')
-#     .rename(columns={'id':'publication_id'})
-#     .filter(['publication_id', 'authors'])
-#     .set_index('publication_id')
-# )
-# df_cit_pubs_authors = pd.json_normalize(df_cit_pubs_authors['authors'])
-# df_cit_pubs_authors = (
-#     df_cit_pubs_authors
-#     .explode('affiliations')
-#     .filter(['affiliations', 'first_name', 'last_name', 'researcher_id'])
-#     .assign(full_name = lambda df: df.first_name.str.cat(df.last_name, sep = ' '))
-# )
-# df_cit_pubs_authors_aff = pd.json_normalize(df_cit_pubs_authors['affiliations']).set_index(df_cit_pubs_authors['full_name'])
-# df_cit_pubs_authors_aff = (
-#     df_cit_pubs_authors_aff
-#     .reset_index()
-#     .filter(['full_name', 'country', 'name'])
-# )
-# df_cit_pubs_authors = df_cit_pubs_authors.drop(columns = 'affiliations')
-# df_cit_pubs_authors = pd.merge(df_cit_pubs_authors, df_cit_pubs_authors_aff, on = 'full_name')
-
-# df_cit_pubs_orgs = df_cit_pubs_orgs.filter(['publication_id', 'name', 'types'])
-# df_output = pd.merge(df_cit_pubs_authors, df_cit_pubs_orgs, on = 'name')
-# df_output = df_output.drop_duplicates()
-# df_output.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_citers.csv"])), index = False)
-
-# # Citing publications research areas
-# df_cit_pubs = df_cit_pubs.rename(columns={'id':'publication_id'})
-# df_citations_for_2020 = format_categories(df_cit_pubs, 'publication', 'for_2020')
-# df_citations_for_2020[['for_2020_code','for_2020']] = df_citations_for_2020['for_2020'].str.split(pat=' ', n=1, expand=True)
-# df_citations_for_2020.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_pubs_for_2020.csv"])), index = False)
 
 print('Data collection completed.')
