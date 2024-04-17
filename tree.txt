@@ -1,7 +1,6 @@
 ª   custom.css
 ª   dimensions_get_data.py
 ª   health_studies_medical_categories.qmd
-ª   internal_collaboration.py
 ª   LICENSE
 ª   life_sciences_medical_categories .qmd
 ª   move_files.ps1
