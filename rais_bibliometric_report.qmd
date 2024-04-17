@@ -1049,21 +1049,25 @@ This section looks at collaborations between researchers in the `r params$resear
 #| label: load-collab-data
 research_organisations <- read_csv(here("data", glue("{params$project_name}_research_organisations.csv")),
                                    show_col_types = FALSE) %>% 
-  filter(type != "preprint")
-
-research_organisations <- research_organisations %>%
+  filter(type != "preprint") %>%
   group_by(publication_id) %>%
-  mutate(collaboration = case_when(length(organisation_name) == 1 ~ "Single authored",
-                                   n_distinct(organisation_name) == 1 ~"Institutional co-authored",
-                                   n_distinct(country_name) == 1 ~ "National collaboration",
+  mutate(authors = length(publication_id),
+         institutions = n_distinct(organisation_id),
+         countries = n_distinct(country_name)) %>%
+  ungroup() %>%
+  mutate(collaboration = case_when(authors == 1 ~ "Single authored",
+                                   institutions == 1 ~ "Institutional co-authored",
+                                   countries == 1 ~ "National collaboration",
                                    .default = "International collaboration")) %>%
-  ungroup()
+  select(-c(authors, institutions, countries)) %>%
+  distinct()
 
 research_organisations$collaboration <- factor(research_organisations$collaboration, 
-                                                 levels = c("Single authored",
-                                                            "Institutional co-authored",
-                                                            "National collaboration",
-                                                            "International collaboration"))
+                                               levels = c("Single authored",
+                                                          "Institutional co-authored",
+                                                          "National collaboration",
+                                                          "International collaboration"))
+
 ```
 
 ```{r}
@@ -1113,14 +1117,14 @@ Research outputs produced by the `r params$research_unit` are broken down into f
 - National collaboration: a research output with at least one co-author from another research organisation based in the UK.
 - International collaboration: a research output with at least one co-author from another research organisation based outside the UK.
 
-From @tbl-collab-types we see that single authored papers account for only a small percentage of the total number of research outputs from the `r params$research_unit`. There are no outputs classed as being institutionally co-authored, indicating that all outputs with more than author from the University of Bradford also have at least one co-author from another research organisation, based either in the UK or beyond.
+From @tbl-collab-types we see that single authored papers account for only a small percentage of the total number of research outputs from the `r params$research_unit`.
 
 ```{r}
 #| label: tbl-collab-types
 #| tbl-cap: !expr glue("Number of research outputs for each type of collaboration with researchers from the {params$research_unit}, {params$min_year} to {params$max_year}.")
 #| cap-location: top
 
-knitr::kable(df_types_of_collaboration, align = "lcc", 
+knitr::kable(df_types_of_collaboration, align = "lrr", 
              booktabs = TRUE, linesep = "\\addlinespace") %>%
   kableExtra::row_spec(0, background = "white", color = "#303030")
 ```

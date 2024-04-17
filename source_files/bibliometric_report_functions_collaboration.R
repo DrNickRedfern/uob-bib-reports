@@ -7,7 +7,8 @@ collaboration_summary <- function(df){
     complete(collaboration, fill = list(frequency = 0)) %>%
     ungroup() %>%
     mutate(percent = round(100 * frequency/sum(frequency), 1)) %>%
-    rename_with(str_to_title)
+    rename_with(str_to_title) %>%
+    adorn_totals(., where = "row")
   
   p_collaboration <- df_types_of_collaboration %>%
     filter(Collaboration != "Single authored") %>%
