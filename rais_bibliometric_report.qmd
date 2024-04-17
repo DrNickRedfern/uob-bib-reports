@@ -5,7 +5,6 @@ params:
   research_unit: !expr blogdown::read_toml('bibliometric_report_params.toml')$unit$research_unit
   min_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$minimum
   max_year: !expr blogdown::read_toml('bibliometric_report_params.toml')$years$maximum
-  palette: !expr blogdown::read_toml('bibliometric_report_params.toml')$look$palette
 title: "`r params$research_unit`"
 subtitle: |
     | `r glue::glue("Bibliometric report: {params$min_year} - {params$max_year}")`
@@ -86,6 +85,16 @@ source(here("source_files", "bibliometric_report_functions_altmetrics.R"))
 
 ```{r}
 #| label: setup-set-palettes
+
+df_palette <- data.frame(faculty = c("foeadt", "fohs", "fols", "fomlass"),
+                         palette = c("PuBuGn", "YlGnBu", "PuBu", "YlOrRd"))
+
+params$palette <- df_palette %>%
+  filter(faculty == params$project_name) %>%
+  select(palette) %>%
+  unlist() %>%
+  unname()
+
 discrete_pal <- RColorBrewer::brewer.pal(n = 9, params$palette)
 continuous_pal <- colorRampPalette(discrete_pal)
 ```
