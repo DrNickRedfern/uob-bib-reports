@@ -67,9 +67,15 @@ world_map_plot <- function(df, palette, scale_name = "Scale"){
 }
 
 # Organisation colours
-org_colours <- function(discrete_pal){
-  
-  data.frame(org_type = c("Archive", "Company", "Education", "Facility", "Government", "Healthcare", "Nonprofit", "Other"),
-             colour = discrete_pal[2:9])
-  
+#' Get a data frame of organization type colors
+#'
+#' This function returns a data frame with organization types and their corresponding colors from a discrete color palette.
+#'
+#' @param discrete_pal A discrete color palette to use for the organization types.
+#' @return A data frame with columns 'org_type' and 'colour'.
+org_colours <- function(discrete_pal) {
+  data.frame(
+    org_type = c("Archive", "Company", "Education", "Facility", "Government", "Healthcare", "Nonprofit", "Other"),
+    colour = discrete_pal[2:9]
+  )
 }
