@@ -68,3 +68,6 @@ store/
 
 # ignore vscode settings
 .vscode
+
+# mypy cache
+.mypy_cache/

@@ -29,15 +29,15 @@ if not os.path.isdir(CITING_PUBLICATIONS):
 else:
     print(CITING_PUBLICATIONS, ': folder already exists.')
 
-GRIDID = 'grid.6268.a'
+GRIDID: str = 'grid.6268.a'
 
 # * Functions
 def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
     
-    category = 'category_' + name
-    output = output + '_id'
+    category: str = 'category_' + name
+    output: str = output + '_id'
 
-    df_output = (
+    df_output: pd.DataFrame = (
          df
         .filter([output, category])
         .explode(category)
@@ -56,7 +56,7 @@ dimcli.login()
 dsl = dimcli.Dsl()
 
 # * Load staff list
-df_staff_list = pd.read_csv(os.path.join(DATA_DIR, 'faculty.csv'))
+df_staff_list: pd.DataFrame = pd.read_csv(os.path.join(DATA_DIR, 'faculty.csv'))
 df_staff_list = df_staff_list[df_staff_list['level_2_long_desc'] == RESEARCH_UNIT]
 df_staff_list = df_staff_list[df_staff_list['researcher_id'].notnull()]
 
@@ -82,7 +82,7 @@ df_researchers = (
 
 df_researchers.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_researchers.csv"])), index = False)
 
-dict_researchers = dict(zip(df_researchers.researcher_id, df_researchers.full_name))
+dict_researchers: dict[str, str] = dict(zip(df_researchers.researcher_id, df_researchers.full_name))
 
 # * Publications: details
 # TODO Change the way data is collected to use publications, author, and affiliations data frames
@@ -127,12 +127,12 @@ df_publications_details = (
 df_publications_details.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_details.csv"])), index = False)
 
 # TODO What other dictionaries should I export for networks
-dict_output_type = dict(zip(df_publications_details.publication_id, df_publications_details.type))
-dict_output_year = dict(zip(df_publications_details.publication_id, df_publications_details.year))
+dict_output_type: dict[str, str] = dict(zip(df_publications_details.publication_id, df_publications_details.type))
+dict_output_year: dict[str, int] = dict(zip(df_publications_details.publication_id, df_publications_details.year))
 
 # * Split the publications data into chunks (2^9)
-split = int(np.ceil(df_publications_details.shape[0]/512))
-df_publications_details_split = np.array_split(df_publications_details, split)
+split: int = int(np.ceil(df_publications_details.shape[0]/512))
+df_publications_details_split: list = np.array_split(df_publications_details, split)
 
 # * Authors: positions and corresponding
 df_publications = pd.DataFrame()
@@ -333,8 +333,8 @@ df_cit_pubs_orgs = (
 )
 
 # Split up citing publications into smaller chunks for processing
-split = int(np.ceil(df_cit_pubs.shape[0]/2048))
-df_cit_pubs_split = np.array_split(df_cit_pubs, split)
+split: int = int(np.ceil(df_cit_pubs.shape[0]/2048))
+df_cit_pubs_split: list = np.array_split(df_cit_pubs, split)
 
 df_output = pd.DataFrame()
 for i in range(len(df_cit_pubs_split)):
