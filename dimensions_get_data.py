@@ -16,8 +16,6 @@ RESEARCH_UNIT: str = CONFIG['unit']['research_unit']
 MIN_YEAR: int = CONFIG['years']['minimum']
 MAX_YEAR: int = CONFIG['years']['maximum']
 REFERENCE_YEAR: int = CONFIG['years']['reference']
-LIMIT: int = CONFIG['search']['limit']
-SKIP: int = CONFIG['search']['skip']
 
 # * Housekeeping
 HOME_DIR: str = os.getcwd()
@@ -29,6 +27,9 @@ if not os.path.isdir(CITING_PUBLICATIONS):
 else:
     print(CITING_PUBLICATIONS, ': folder already exists.')
 
+# * Set parameters
+LIMIT: int = 1000
+SKIP: int = 0
 GRIDID: str = 'grid.6268.a'
 
 # * Functions
