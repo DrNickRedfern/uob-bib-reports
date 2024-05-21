@@ -1,8 +1,7 @@
 '''
 The output of this code is an HTML file named "altmetric_badges_generated.html" 
-saved in the "Z:\university_of_bradford\rais_reports\bibliometric_reports\development\altmetrics" directory. 
-This file contains the HTML source code of the web page located at the URL 
-"Z:\university_of_bradford\rais_reports\bibliometric_reports\development\altmetrics\altmetric_badges.html".
+saved in the altmetrics directory. This file contains the HTML source code of the web p
+age located at the URL "/altmetrics/altmetric_badges.html".
 
 The code follows a straightforward logic flow: it initializes the Edge web browser, 
 navigates to the desired URL, retrieves the HTML source code, saves it to a file, 
