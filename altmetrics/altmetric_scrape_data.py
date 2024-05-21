@@ -1,18 +1,31 @@
+'''
+This script extracts data from an HTML file containing information about research 
+publications and their altmetric scores.
+
+For each publication, it extracts the altmetric score and the individual metric 
+values from the HTML.
+
+It converts the extracted data into a pandas DataFrame, with each row representing 
+a publication and columns for the DOI, altmetric score, and individual metric values.
+
+The resulting DataFrame is saved as a CSV file in the "data" directory, using a 
+filename that includes the project name specified in the configuration file.
+'''
 from bs4 import BeautifulSoup
 import os
 import pandas as pd
 import tomli
 
-HOME_DIR = os.getcwd()
-ALTMETRICS_DIR = os.path.join(os.getcwd(), "altmetrics")
-DATA_DIR = os.path.join(HOME_DIR, 'data')
+HOME_DIR: str = os.getcwd()
+ALTMETRICS_DIR: str = os.path.join(os.getcwd(), "altmetrics")
+DATA_DIR: str = os.path.join(HOME_DIR, 'data')
 
 with open (os.path.join(HOME_DIR, 'bibliometric_report_params.toml'), mode = 'rb') as f:
     CONFIG = tomli.load(f)
 PROJECT_NAME: str = CONFIG['project']['name']
 
 # Convert a list to a dictionary
-def Convert(a):
+def Convert(a) -> dict:
     it = iter(a)
     res_dct = dict(zip(it, it))
     return res_dct
@@ -26,7 +39,7 @@ with open(r"altmetric_badges_generated.html", "r") as f:
 images = soup.findAll('img')
 result = soup.find_all(lambda tag: tag.name == 'div' and tag.get('class') == ['altmetric-embed'])
 
-df_results = pd.DataFrame()
+df_results: pd.DataFrame = pd.DataFrame()
 
 for i in range(len(images)):
     # Grab the altmetric score
@@ -41,14 +54,14 @@ for i in range(len(images)):
     text = [x for x in text if "details" not in x]
     text = [x.replace('(','').replace(')','') for x in text]
 
-    text_store = []
+    text_store: list = []
     for t in text:
         text_format = t.rsplit(' ', 1)
         text_store.append(text_format[0])
         text_store.append(int(text_format[1]))
     
     # Convert and format to a dataframe
-    text_dict = Convert(text_store)
+    text_dict: dict = Convert(text_store)
     df = pd.DataFrame.from_dict(text_dict, orient = 'index', columns = ['n'])
     df = (
         df

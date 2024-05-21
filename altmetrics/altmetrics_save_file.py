@@ -7,8 +7,6 @@ The code follows a straightforward logic flow: it initializes the Edge web brows
 navigates to the desired URL, retrieves the HTML source code, saves it to a file, 
 and then closes the browser.
 '''
-# TODO sort out file paths relative to the project
-# TODO update git
 from selenium import webdriver
 
 import os
