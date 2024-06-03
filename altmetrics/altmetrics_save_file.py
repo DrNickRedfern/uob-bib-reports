@@ -16,6 +16,6 @@ ALTMETRICS_DIR = os.path.join(os.getcwd(), 'altmetrics')
 edge_driver = webdriver.Edge()
 edge_driver.implicitly_wait(0.5)
 edge_driver.get(os.path.join(ALTMETRICS_DIR, 'altmetric_badges.html'))
-with open (os.path.join(ALTMETRICS_DIR, 'altmetric_badges_generated.html', 'w', encoding='utf-8')) as file:
+with open (os.path.join(ALTMETRICS_DIR, 'altmetric_badges_generated.html'), 'w', encoding='utf-8') as file:
     file.write(edge_driver.page_source)
 edge_driver.quit()

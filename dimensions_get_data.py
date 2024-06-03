@@ -33,7 +33,17 @@ MED_FACULTIES = ['Faculty of Health Studies', 'Faculty of Life Sciences']
 
 # * Functions
 def format_categories(df: pd.DataFrame, output: str, name: str) -> pd.DataFrame:
+    """
+    Formats a DataFrame to extract and rename category columns.
     
+    Args:
+        df (pd.DataFrame): The input DataFrame containing category data.
+        output (str): The name of the output column for the category ID.
+        name (str): The name to use for the category column.
+    
+    Returns:
+        pd.DataFrame: A new DataFrame with the category data formatted and renamed.
+    """
     category: str = 'category_' + name
     output: str = output + '_id'
 
@@ -131,7 +141,7 @@ dict_output_year: dict[str, int] = dict(zip(df_publications_details.publication_
 
 # * Split the publications data into chunks (2^9)
 split: int = int(np.ceil(df_publications_details.shape[0]/512))
-df_publications_details_split: list[np.NDArray] = np.array_split(df_publications_details, split)
+df_publications_details_split: list = np.array_split(df_publications_details, split)
 
 # * Authors: positions and corresponding
 df_publications = pd.DataFrame()
@@ -188,6 +198,7 @@ df_autpub['AuthorCategory'] = np.where(
 )
 
 # Limit to Univeristy of Bradford authors only
+# Check for both University of Bradford and Bradford University because sometimes the affiliation name is wrong
 brad_authors = df_autpub[df_autpub['raw_affiliation'].astype(str).str.contains('University of Bradford|Bradford University', case=False)]
 brad_authors = brad_authors.drop(columns=['id', 'raw_affiliation', 'first_name', 'last_name', 'orcid'])
 # corresponding data type is string and should be bool
@@ -230,34 +241,34 @@ df_publications_categories_sdg.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NA
 if RESEARCH_UNIT not in MED_FACULTIES:
     pass
 else:
-# MeSH
-df_publications_categories_mesh = (
-    df_publications_categories
-    .filter(['publication_id', 'mesh_terms'])
-    .explode('mesh_terms')
-    .assign(type = lambda df: df['publication_id'].map(dict_output_type))
-)
-df_publications_categories_mesh.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_mesh.csv"])), index=False)
+    # MeSH
+    df_publications_categories_mesh = (
+        df_publications_categories
+        .filter(['publication_id', 'mesh_terms'])
+        .explode('mesh_terms')
+        .assign(type = lambda df: df['publication_id'].map(dict_output_type))
+    )
+    df_publications_categories_mesh.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_mesh.csv"])), index=False)
 
-# RCDC
-df_publications_categories_rcdc = format_categories(df_publications_categories, 'publication', 'rcdc')
-df_publications_categories_rcdc = df_publications_categories_rcdc.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
-df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_rcdc.csv"])), index=False)
+    # RCDC
+    df_publications_categories_rcdc = format_categories(df_publications_categories, 'publication', 'rcdc')
+    df_publications_categories_rcdc = df_publications_categories_rcdc.assign(type = df_publications_categories_rcdc['publication_id'].map(dict_output_type))
+    df_publications_categories_rcdc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_rcdc.csv"])), index=False)
 
-# HRCS HC
-df_publications_categories_hrcs_hc = format_categories(df_publications_categories, 'publication', 'hrcs_hc')
-df_publications_categories_hrcs_hc = df_publications_categories_hrcs_hc.assign(type = df_publications_categories_hrcs_hc['publication_id'].map(dict_output_type))
-df_publications_categories_hrcs_hc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_hc.csv"])), index=False)
+    # HRCS HC
+    df_publications_categories_hrcs_hc = format_categories(df_publications_categories, 'publication', 'hrcs_hc')
+    df_publications_categories_hrcs_hc = df_publications_categories_hrcs_hc.assign(type = df_publications_categories_hrcs_hc['publication_id'].map(dict_output_type))
+    df_publications_categories_hrcs_hc.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_hc.csv"])), index=False)
 
-# HRCS RAC
-df_publications_categories_hrcs_rac = format_categories(df_publications_categories, 'publication', 'hrcs_rac')
-df_publications_categories_hrcs_rac = df_publications_categories_hrcs_rac.assign(type = df_publications_categories_hrcs_rac['publication_id'].map(dict_output_type))
-df_publications_categories_hrcs_rac.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_rac.csv"])), index=False)
+    # HRCS RAC
+    df_publications_categories_hrcs_rac = format_categories(df_publications_categories, 'publication', 'hrcs_rac')
+    df_publications_categories_hrcs_rac = df_publications_categories_hrcs_rac.assign(type = df_publications_categories_hrcs_rac['publication_id'].map(dict_output_type))
+    df_publications_categories_hrcs_rac.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_hrcs_rac.csv"])), index=False)
 
-# ICRP CSO
-df_publications_categories_icrp_cso = format_categories(df_publications_categories, 'publication', 'icrp_cso')
-df_publications_categories_icrp_cso = df_publications_categories_icrp_cso.assign(type = df_publications_categories_icrp_cso['publication_id'].map(dict_output_type))
-df_publications_categories_icrp_cso.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_icrp_cso.csv"])), index=False)
+    # ICRP CSO
+    df_publications_categories_icrp_cso = format_categories(df_publications_categories, 'publication', 'icrp_cso')
+    df_publications_categories_icrp_cso = df_publications_categories_icrp_cso.assign(type = df_publications_categories_icrp_cso['publication_id'].map(dict_output_type))
+    df_publications_categories_icrp_cso.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_publications_icrp_cso.csv"])), index=False)
 
 # * Collaborating research organisations 
 print('Collecting data on research organisations')
@@ -398,7 +409,6 @@ edges = internal_authorsf.merge(internal_authorsf, on='pub_id').groupby(['resear
 edges.reset_index(inplace = True)
 
 auth_details = auth_df.groupby('researcher_id').agg({'pub_id':'count', 'first_name':'max', 'last_name':'max'})
-# TODO Assign researcher details to id by mapping a dictionary
 auth_my_df = (
     auth_details
     .reset_index()
