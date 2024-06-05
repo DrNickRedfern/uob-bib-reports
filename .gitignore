@@ -51,6 +51,9 @@ rsconnect/
 # ini files
 *.ini
 
+# .env
+.env
+
 # toml files
 *.toml
 

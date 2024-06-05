@@ -12,9 +12,10 @@ The resulting DataFrame is saved as a CSV file in the "data" directory, using a
 filename that includes the project name specified in the configuration file.
 '''
 from bs4 import BeautifulSoup
-import os
 import pandas as pd
 import tomli
+
+import os
 
 HOME_DIR: str = os.getcwd()
 ALTMETRICS_DIR: str = os.path.join(os.getcwd(), "altmetrics")

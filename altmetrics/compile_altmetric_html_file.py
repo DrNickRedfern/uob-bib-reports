@@ -15,9 +15,10 @@ The output of this code is an HTML file named altmetric_badges.html, which
 contains the necessary HTML structure and embedded Altmetric badges for each 
 DOI in the input CSV file.
 '''
-import os
 import pandas as pd
 import tomli
+
+import os
 
 # * Load the dois we want to produce badges for
 HOME_DIR: str = os.getcwd()

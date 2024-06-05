@@ -1543,4 +1543,3 @@ report_date <- format(Sys.Date(), '%Y_%m_%d')
 writeLines(capture.output(sessionInfo()), 
            glue("{params$project_name}_{report_date}_sessionInfo.txt"))
 ```
-
