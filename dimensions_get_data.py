@@ -71,6 +71,27 @@ df_staff_list = df_staff_list[df_staff_list['level_2_long_desc'] == RESEARCH_UNI
 df_staff_list = df_staff_list[df_staff_list['researcher_id'].notnull()]
 
 # * Researchers
+'''
+This code block is repsonsible for retrieving and processing data on researchers 
+with dismabiguated ids in Dimensions.The input is the list of researchers in the 
+df_staff_list data frame. 
+
+The following data is returned from Dimensions for each researcher id:
+- First name
+- Last name
+- First publication year
+- Current research organisation: this will be deprecated in the future
+- Obsolete flag
+- ORCID id
+
+This data is then process to create the following columns:
+- Academic age: the number of years since the researcher's first publication
+- Full name
+
+The data is then exported to a csv file.
+
+A dictionary is created to map researcher ids to full names for later data processing.
+'''
 print('Collecting data on researchers')
 df_researchers = dsl.query(f"""
                   search researchers
@@ -95,9 +116,7 @@ df_researchers.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_researcher
 dict_researchers: dict[str, str] = dict(zip(df_researchers.researcher_id, df_researchers.full_name))
 
 # * Publications: details
-# TODO Change the way data is collected to use publications, author, and affiliations data frames
 # ! Do not use dsl.query_iterative here because it drops duplicates needed for accurate publications counts per researcher
-# TODO Add fields to get the data required for author positions
 print('Collecting data on publications')
 df_publications_details = dsl.query(f"""search publications 
                                 where (researchers.id in {json.dumps(list(df_researchers['researcher_id']))} and 
@@ -139,11 +158,35 @@ df_publications_details.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_p
 dict_output_type: dict[str, str] = dict(zip(df_publications_details.publication_id, df_publications_details.type))
 dict_output_year: dict[str, int] = dict(zip(df_publications_details.publication_id, df_publications_details.year))
 
-# * Split the publications data into chunks (2^9)
+# * Split the publications data into chunks
+'''
+It is possible to pass only so many ids to the Dimensions API in a single query.
+This code block splits the publications data into chunks of 512 ids that are
+then looped over to collect the data.
+
+The resulting NDarray is reused for subsequent calls to the API.
+'''
 split: int = int(np.ceil(df_publications_details.shape[0]/512))
 df_publications_details_split: list = np.array_split(df_publications_details, split)
 
 # * Authors: positions and corresponding
+'''
+This section is responsible for retrieving and processing data related to 
+authors and their positions (e.g., first author, last author) in 
+publications.
+
+Data about publications and authors is retrived for the list of outputs stored 
+in the chunks comprising df_publications_details_split.
+
+Author positions are calcualted for each publication. The data is thenn 
+filtered to include only articles and authors affiliated with the 
+University of Bradford. This includes handling different variations of 
+the affiliation name ("University of Bradford" and "Bradford University").
+
+A CSV file is exported containing information about authors affiliated with the
+University of Bradford, their corresponding author status, and their position 
+(first author, last author, or neither) in each publication.
+'''
 df_publications = pd.DataFrame()
 df_authors = pd.DataFrame()
 df_affiliations = pd.DataFrame()
@@ -175,12 +218,8 @@ df_autpub = pd.merge(
     how='inner' # left
 )
 
-# TODO This needs tidying up into a single step
-# df_autpub = df_autpub.drop(columns = ['authors', 'affiliations'])
-# df_autpub["author_name"] = df_autpub["last_name"] + [", "] + df_autpub["first_name"]
-# df_autpub['author_number'] = df_autpub.groupby(['pub_id']).cumcount()+1
-
 # ! Untested
+# If this doesn't work get the original version from the development folder
 df_autpub = (
     df_autpub
     .drop(columns = ['authors', 'affiliations'])
@@ -201,7 +240,7 @@ df_autpub['AuthorCategory'] = np.where(
 # Check for both University of Bradford and Bradford University because sometimes the affiliation name is wrong
 brad_authors = df_autpub[df_autpub['raw_affiliation'].astype(str).str.contains('University of Bradford|Bradford University', case=False)]
 brad_authors = brad_authors.drop(columns=['id', 'raw_affiliation', 'first_name', 'last_name', 'orcid'])
-# corresponding data type is string and should be bool
+# corresponding data type is retrurned as string and should be bool
 brad_authors['corresponding'] = brad_authors['corresponding'].astype(bool)
 
 brad_authors.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_author_positions.csv"])), index=False)
@@ -209,6 +248,29 @@ brad_authors.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_author_posit
 df_affiliations = df_affiliations.filter(['aff_id', 'aff_name', 'pub_id'])
 
 # * Publications: categories
+'''
+This code block is responsible for retrieving and processing publication 
+category data from the Dimensions API.
+
+The input it takes is a list of publication IDs stored in the 
+df_publications_details_split.
+
+The output it produces is a series of CSV files containing different 
+category classifications for the publications, including
+
+- Units of Assessment (UoA)
+- Fields of Research (FoR) 2020
+- Sustainable Development Goals (SDG)
+- Medical Subject Headings (MeSH)
+- Research Condition Disease Categories (RCDC)
+- Health Research Classification System Health Categories (HRCS HC)
+- Health Research Classification System Research Activity Codes (HRCS RAC)
+- International Cancer Research Partnership Common Scientific Outline (ICRP CSO).
+
+For certain category classifications (MeSH, RCDC, HRCS HC, HRCS RAC, and ICRP CSO), 
+the code checks if the RESEARCH_UNIT is in the MED_FACULTIES list. If it is, it
+processes and exports those category classifications; otherwise, it skips them.
+'''
 df_publications_categories = pd.DataFrame()
 for i in range(len(df_publications_details_split)):
     pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
@@ -272,6 +334,19 @@ else:
 
 # * Collaborating research organisations 
 print('Collecting data on research organisations')
+'''
+This code block is responsible for collecting and processing data related to 
+research organizations that have collaborated on publications with 
+researchers from the University of Bradford.
+
+It takes as input a list of publication IDs stored in the variable 
+df_publications_details_split.
+
+The output it produces is a CSV file named [PROJECT_NAME]_research_organisations.csv, 
+which contains information about the research organizations, 
+their countries, names, types, and the publications they have collaborated on 
+with the University of Bradford researchers.
+'''
 res_publications_organisations = pd.DataFrame()
 for i in range(len(df_publications_details_split)):
     pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
@@ -315,6 +390,27 @@ df_research_organisations.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "
 
 # * Citing publications
 print('Collecting data on citing publications')
+'''
+This code block is responsible for collecting and processing data related to 
+publications that cite the research outputs of the University of Bradford 
+researchers.
+
+The input it takes is a list of publication IDs stored in the variable 
+df_publications_details_split. These are the IDs of publications authored by 
+University of Bradford researchers.
+
+The outputs it produces are several CSV files containing information about the 
+citing publications, the countries and organizations that authored those 
+citing publications, and the types of organizations involved:
+
+- df_citing_countries.csv: Contains a count of citing publications grouped 
+by country.
+- df_citing_organisations.csv: Contains a count of citing publications grouped 
+by organization name.
+- df_citing_org_types.csv: Contains a count of citing publications grouped 
+by organization type.
+
+'''
 df_cit_pubs = pd.DataFrame()
 for i in range(len(df_publications_details_split)):
     pubs = df_publications_details_split[i]['publication_id'].drop_duplicates()
@@ -389,6 +485,41 @@ df_citing_orgs_types = (
 df_citing_orgs_types.to_csv(os.path.join(CITING_PUBLICATIONS, "".join([PROJECT_NAME, "_citing_org_types.csv"])), index = False)
 
 # * Internal collaboration
+'''
+This code block is responsible for analyzing internal collaborations among 
+researchers at the University of Bradford based on their co-authored publications.
+
+The primary purpose of this code is to identify and quantify the collaborative 
+relationships between researchers within the University of Bradford by analyzing 
+their co-authored publications.
+
+The code takes a list of researcher IDs (df_staff_list['researcher_id']) as input.
+
+The code produces a CSV file named [PROJECT_NAME]_edges.csv, which contains 
+information about the collaborative relationships between researchers. Each row
+in the file represents a connection (edge) between two researchers who have 
+co-authored a publication together.
+
+The code achieves its purpose through the following steps:
+
+a. It queries the Dimensions API to retrieve a list of publications where the 
+authors are researchers from the input list (df_staff_list['researcher_id']). 
+b. It processes the retrieved publication data to extract information about the
+authors and their affiliations. 
+c. It filters the author data to include only those affiliated with the 
+University of Bradford (aff_id == GRIDID). 
+d. For each publication, it creates pairs of researcher IDs representing 
+co-authors. 
+e. It counts the number of co-authored publications for each pair of researchers. 
+f. It maps the researcher IDs to their full names using a dictionary 
+(dict_author_id). 
+g. It creates a DataFrame (edges) containing the pairs of researcher names and 
+the count of their co-authored publications. 
+h. It removes self-collaborations (where a researcher is paired with themselves) 
+from the DataFrame. 
+i. It rearranges the columns in the DataFrame and exports it as a CSV file 
+([PROJECT_NAME]_edges.csv).
+'''
 publications = dsl.query_iterative(f"""search publications
                                         where (researchers.id in {json.dumps(list(df_staff_list['researcher_id']))} and 
                                         year in [{MIN_YEAR}:{MAX_YEAR}])
@@ -435,4 +566,6 @@ edges = edges[edges['researcher_id_x'] != edges['researcher_id_y']]
 edges.to_csv(os.path.join(DATA_DIR, "".join([PROJECT_NAME, "_edges.csv"])), index = False)
 
 # * Finished
+dimcli.logout()
+
 print('Data collection completed.')

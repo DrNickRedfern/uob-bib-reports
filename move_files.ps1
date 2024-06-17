@@ -1,5 +1,11 @@
-# python html_redirect.py
-
+# The purpose of the code is to organize and consolidate report-related files 
+# in a single directory for better management and accessibility.
+# The code does not take any direct input from the user. However, it relies 
+# on the current working directory ($PSScriptRoot) to determine the location 
+# of the files to be moved.
+# The output of the code is the creation of a new directory named "report" 
+# (if it doesn't already exist) and the relocation of specific files matching 
+# certain naming patterns into that directory.
 $destination = $PSScriptRoot + '\report'
 
 If(!(test-path -PathType container $destination))

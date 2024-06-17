@@ -1,6 +1,23 @@
 pacman::p_load(GGally, network)
 source(here("source_files", "df_to_matrix.R"))
 
+#' Preformat network data for internal collaboration analysis
+#'
+#' This function takes edge data, a staff list, and a target faculty, and preprocesses the data for
+#' internal collaboration analysis. It performs the following steps:
+#'
+#' 1. Adds faculty and unique ID information for each researcher based on the staff list.
+#' 2. Filters out any rows with missing faculty information.
+#' 3. Adds full name information for each researcher based on the staff list.
+#' 4. Aggregates the data by the non-pub_id columns, summing the pub_id values.
+#' 5. Deduplicates the data.
+#' 6. Filters the data to only include rows where either the researcher_x_faculty or researcher_y_faculty
+#'    matches the target faculty.
+#'
+#' @param edge_data A data frame containing the edge data (e.g., researcher IDs and publication counts).
+#' @param staff_list A data frame containing the staff list (e.g., researcher IDs, faculty, and full names).
+#' @param target_faculty The faculty to focus the analysis on.
+#' @return A preprocessed data frame ready for internal collaboration analysis.
 pre_format_network_data <- function(edge_data, staff_list, target_faculty){
   
   edge_data %>%
@@ -21,6 +38,12 @@ pre_format_network_data <- function(edge_data, staff_list, target_faculty){
   
 }
 
+#' Calculate total connections and connectors for each researcher
+#'
+#' This function takes a data frame of network data and calculates the total number of connections and unique connectors for each researcher.
+#'
+#' @param df A data frame containing the network data, with columns for `researcher_x`, `researcher_y`, and `pub_id`.
+#' @return A data frame with columns for `researcher_x`, `connections`, and `connectors`.
 total_connections <- function(df){
   
   df %>%
@@ -31,6 +54,12 @@ total_connections <- function(df){
   
 }
 
+#' Summarize internal collaboration data
+#'
+#' This function takes a data frame of internal collaboration data and summarizes it by faculty. It calculates the number of collaborative pairs, total collaborations, minimum, median, mean, and maximum collaborations, as well as the number of collaborating staff members and the average number of connections per staff member.
+#'
+#' @param df A data frame containing the internal collaboration data, with columns for `researcher_x_faculty`, `researcher_y_faculty`, and `pub_id`.
+#' @return A data frame with summarized collaboration statistics, including `Collaborative Pairs`, `Total Collaborations`, `Min`, `Median`, `Mean`, `Max`, `Collaborating Faculty`, `Collaborating Staff`, and `Connections Per Staff Member`.
 internal_collab_summary <- function(df) {
   
   collab_summary <- df %>%
@@ -60,6 +89,14 @@ internal_collab_summary <- function(df) {
   
 }
 
+#' Format a data frame into a matrix representation of a network
+#'
+#' This function takes a data frame containing network data and converts it into a matrix representation. 
+#' The matrix has rows and columns representing the researchers, and the values in the matrix represent the number of collaborations between each pair of researchers.
+#' The function filters out any rows where the number of collaborations is NA.
+#'
+#' @param df A data frame containing network data, with columns for `researcher_x`, `researcher_y`, and `pub_id`.
+#' @return A data frame with columns `row`, `col`, and `val`, representing the matrix elements.
 format_matrix <- function(df) {
   
   my_matrix <- data.frame2matrix(df, "researcher_x", "researcher_y", "pub_id")
@@ -75,6 +112,14 @@ format_matrix <- function(df) {
   
 }
 
+#' Format network data for visualization
+#'
+#' This function takes network data and a data frame from a matrix, and formats the data for plotting a network visualization using ggnet2.
+#' It calculates the coordinates for the nodes and edges, and adds additional metadata to the data frames.
+#'
+#' @param network_data A data frame containing the network data, including researcher names, faculties, and collaboration counts.
+#' @param df_from_matrix A data frame containing the matrix representation of the network.
+#' @return A list containing two data frames: `dat_points` for the node data, and `dat_lines` for the edge data.
 format_network <- function(network_data, df_from_matrix) {
   
   set.seed(2)
@@ -109,6 +154,14 @@ format_network <- function(network_data, df_from_matrix) {
   
 }
 
+#' Plot an internal network visualization
+#'
+#' This function takes a list of network plotting data and generates a ggplot2 visualization of the internal network.
+#' The visualization includes nodes representing researchers, colored by their faculty, and edges representing collaborations between researchers.
+#' The size of the nodes is proportional to the total number of collaborations for each researcher.
+#'
+#' @param network_plotting_data A list containing the `dat_points` and `dat_lines` data frames required to plot the network.
+#' @return A ggplot2 object representing the internal network visualization.
 internal_network_plot <- function(network_plotting_data){
   
   faculty_colours <- c("Faculty of Engineering and Digital Technologies" = "#014636",
@@ -149,4 +202,3 @@ internal_network_plot <- function(network_plotting_data){
           legend.position = "bottom")
   
 }
-

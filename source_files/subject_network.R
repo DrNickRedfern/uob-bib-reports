@@ -1,3 +1,10 @@
+#' Generate a network plot for subject codes
+#'
+#' This function takes a data frame `df` and a color palette `palette` as input, and generates an interactive network plot visualizing the relationships between subject codes.
+#'
+#' @param df A data frame containing the subject code information, including `publication_id`, `for_2020_code`, `for_2020_name`, and `level`.
+#' @param palette A color palette to use for the subject code nodes in the network plot.
+#' @return An interactive ggplot2 network plot.
 subject_network <- function(df, palette){
   
   df <- df %>%
@@ -75,5 +82,3 @@ subject_network <- function(df, palette){
   ggplotly(output, tooltip = "text")
   
 }
-
-
